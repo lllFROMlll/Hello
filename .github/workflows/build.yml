@@ -24,6 +24,8 @@ jobs:
         run: gradle wrapper --gradle-version 8.7
 
       - name: Compilar o app
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: ./gradlew assembleDebug
 
       - name: Salvar o APK gerado
