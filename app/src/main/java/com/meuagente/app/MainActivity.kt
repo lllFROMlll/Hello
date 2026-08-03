@@ -3,6 +3,7 @@ package com.meuagente.app
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -26,7 +27,14 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            AppPrincipal()
+            val escuro = isSystemInDarkTheme()
+            val cores = if (escuro) darkColorScheme() else lightColorScheme()
+
+            MaterialTheme(colorScheme = cores) {
+                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                    AppPrincipal()
+                }
+            }
         }
     }
 }
@@ -46,7 +54,7 @@ suspend fun perguntarAoGemini(historico: List<MensagemEntity>, chaveApi: String)
     return withContext(Dispatchers.IO) {
         try {
             val client = OkHttpClient()
-            val url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$chaveApi"
+            val url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$chaveApi"
 
             val contents = JSONArray()
             for (msg in historico) {
