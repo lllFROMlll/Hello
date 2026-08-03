@@ -7,7 +7,7 @@
     <application
         android:allowBackup="true"
         android:label="Meu Agente"
-        android:theme="@android:style/Theme.DeviceDefault.DayNight.NoActionBar">
+        android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
 
         <activity
             android:name=".MainActivity"
