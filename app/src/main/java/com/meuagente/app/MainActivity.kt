@@ -50,11 +50,37 @@ fun AppPrincipal() {
     }
 }
 
-suspend fun perguntarAoGemini(historico: List<MensagemEntity>, chaveApi: String): String {
+// Ponto de entrada único: decide qual provedor chamar, com base no
+// que o usuário escolheu nas Configurações. Adicionar um provedor
+// novo no futuro significa só adicionar mais um "quando" aqui, sem
+// mexer no resto do app.
+suspend fun perguntarComProvedor(
+    historico: List<MensagemEntity>,
+    provedor: String,
+    modelo: String,
+    chaveApi: String
+): String {
+    return when (provedor) {
+        "Gemini" -> chamarGemini(historico, chaveApi, modelo.ifBlank { "gemini-2.5-flash-lite" })
+        "OpenAI" -> chamarFormatoOpenAI(
+            historico, chaveApi, modelo.ifBlank { "gpt-4o-mini" },
+            "https://api.openai.com/v1/chat/completions"
+        )
+        "OpenRouter" -> chamarFormatoOpenAI(
+            historico, chaveApi, modelo,
+            "https://openrouter.ai/api/v1/chat/completions"
+        )
+        "Anthropic" -> "O suporte ao provedor Anthropic ainda não foi implementado. Escolha Gemini, OpenAI ou OpenRouter por enquanto."
+        else -> "Provedor \"$provedor\" ainda não é reconhecido pelo app."
+    }
+}
+
+// Formato de requisição específico do Gemini.
+private suspend fun chamarGemini(historico: List<MensagemEntity>, chaveApi: String, modelo: String): String {
     return withContext(Dispatchers.IO) {
         try {
             val client = OkHttpClient()
-            val url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$chaveApi"
+            val url = "https://generativelanguage.googleapis.com/v1beta/models/$modelo:generateContent?key=$chaveApi"
 
             val contents = JSONArray()
             for (msg in historico) {
@@ -87,6 +113,59 @@ suspend fun perguntarAoGemini(historico: List<MensagemEntity>, chaveApi: String)
         } catch (e: IOException) {
             "Não consegui me conectar à internet agora. Tenta de novo em instantes."
         } catch (e: Exception) {
+            "Algo deu errado ao processar a resposta do Gemini: ${e.message}"
+        }
+    }
+}
+
+// Formato de requisição usado por OpenAI e OpenRouter (é o mesmo
+// formato nos dois, só muda o endereço e o nome do modelo).
+private suspend fun chamarFormatoOpenAI(
+    historico: List<MensagemEntity>,
+    chaveApi: String,
+    modelo: String,
+    url: String
+): String {
+    return withContext(Dispatchers.IO) {
+        try {
+            val client = OkHttpClient()
+
+            val mensagens = JSONArray()
+            for (msg in historico) {
+                val papel = if (msg.autor == "você") "user" else "assistant"
+                val item = JSONObject().put("role", papel).put("content", msg.texto)
+                mensagens.put(item)
+            }
+
+            val corpoJson = JSONObject()
+                .put("model", modelo)
+                .put("messages", mensagens)
+
+            val mediaType = "application/json".toMediaType()
+            val corpo = corpoJson.toString().toRequestBody(mediaType)
+
+            val request = Request.Builder()
+                .url(url)
+                .addHeader("Authorization", "Bearer $chaveApi")
+                .post(corpo)
+                .build()
+
+            val resposta = client.newCall(request).execute()
+            val textoResposta = resposta.body?.string() ?: ""
+
+            if (!resposta.isSuccessful) {
+                return@withContext "Erro ${resposta.code}: $textoResposta"
+            }
+
+            val json = JSONObject(textoResposta)
+            val escolhas = json.getJSONArray("choices")
+            val primeira = escolhas.getJSONObject(0)
+            val mensagem = primeira.getJSONObject("message")
+            mensagem.getString("content")
+
+        } catch (e: IOException) {
+            "Não consegui me conectar à internet agora. Tenta de novo em instantes."
+        } catch (e: Exception) {
             "Algo deu errado ao processar a resposta: ${e.message}"
         }
     }
@@ -106,7 +185,7 @@ fun TelaDeChat(aoAbrirConfig: () -> Unit) {
         val historico = db.agenteDao().listarMensagens()
         if (historico.isEmpty()) {
             db.agenteDao().salvarMensagem(
-                MensagemEntity(autor = "agente", texto = "Oi! Eu sou seu agente. Antes de conversarmos, toque no ícone de engrenagem para adicionar sua chave de API.", dataHora = System.currentTimeMillis())
+                MensagemEntity(autor = "agente", texto = "Oi! Eu sou seu agente. Antes de conversarmos, toque no ícone de engrenagem para escolher o provedor de IA e colar sua chave de API.", dataHora = System.currentTimeMillis())
             )
         }
         mensagens = db.agenteDao().listarMensagens()
@@ -143,7 +222,9 @@ fun TelaDeChat(aoAbrirConfig: () -> Unit) {
                 if (textoDigitado.isNotBlank() && !carregando) {
                     val texto = textoDigitado
                     textoDigitado = ""
-                    val chave = Configuracoes.obterChave(contexto)
+                    val provedor = Configuracoes.obterProvedorAtual(contexto)
+                    val modelo = Configuracoes.obterModeloAtual(contexto)
+                    val chave = Configuracoes.obterChaveAtual(contexto)
 
                     escopo.launch {
                         db.agenteDao().salvarMensagem(
@@ -153,11 +234,11 @@ fun TelaDeChat(aoAbrirConfig: () -> Unit) {
 
                         if (chave.isBlank()) {
                             db.agenteDao().salvarMensagem(
-                                MensagemEntity(autor = "agente", texto = "Você ainda não configurou uma chave de API. Toque no ícone de engrenagem para adicionar uma.", dataHora = System.currentTimeMillis())
+                                MensagemEntity(autor = "agente", texto = "Você ainda não configurou uma chave de API para o provedor \"$provedor\". Toque no ícone de engrenagem para adicionar uma.", dataHora = System.currentTimeMillis())
                             )
                         } else {
                             carregando = true
-                            val resposta = perguntarAoGemini(mensagens, chave)
+                            val resposta = perguntarComProvedor(mensagens, provedor, modelo, chave)
                             carregando = false
                             db.agenteDao().salvarMensagem(
                                 MensagemEntity(autor = "agente", texto = resposta, dataHora = System.currentTimeMillis())
