@@ -11,6 +11,7 @@ import androidx.compose.ui.unit.dp
 // "Personalizado" permite digitar qualquer outro nome que o usuário quiser.
 private val PROVEDORES_CONHECIDOS = listOf("Gemini", "OpenAI", "OpenRouter", "Anthropic", "Personalizado")
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TelaConfiguracoes(aoVoltar: () -> Unit) {
     val contexto = LocalContext.current
