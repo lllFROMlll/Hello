@@ -50,33 +50,92 @@ fun AppPrincipal() {
     }
 }
 
-// Ponto de entrada único: decide qual provedor chamar, com base no
-// que o usuário escolheu nas Configurações. Adicionar um provedor
-// novo no futuro significa só adicionar mais um "quando" aqui, sem
-// mexer no resto do app.
+// Marcações que a IA usa pra avisar o app que quer guardar ou apagar
+// uma memória. Ficam escondidas do usuário — o app lê e remove.
+private val REGEX_GUARDAR = Regex("""\[GUARDAR:\s*(.+?)\]""")
+private val REGEX_APAGAR = Regex("""\[APAGAR:\s*(.+?)\]""")
+
+// Monta a instrução que ensina a IA a se comportar como agente com
+// memória, não só chatbot — inclui a lista do que já está guardado.
+private fun montarInstrucaoDeMemoria(lembretes: List<LembreteEntity>): String {
+    val listaTexto = if (lembretes.isEmpty()) {
+        "(nenhuma memória guardada ainda)"
+    } else {
+        lembretes.joinToString("\n") { "- ${it.descricao}" + if (it.concluido) " (concluído)" else "" }
+    }
+
+    return """
+        Você é Blér, um assistente pessoal com memória real, não apenas um chatbot comum.
+        Memórias guardadas até agora:
+        $listaTexto
+
+        Regras:
+        - Se o usuário pedir para você lembrar de algo (sem data específica), adicione no FINAL da sua resposta, em uma linha separada, exatamente: [GUARDAR: descrição curta e clara]
+        - Se o usuário disser que algo já foi resolvido, pode apagar, ou não precisa mais lembrar, adicione no FINAL da resposta, em linha separada: [APAGAR: descrição que identifique a memória antiga]
+        - Nunca explique essas marcações para o usuário, nem as escreva de outra forma — elas são só para o sistema.
+        - Se o usuário perguntar o que você tem guardado, responda usando a lista acima, de forma natural e simples.
+    """.trimIndent()
+}
+
+// Lê a resposta da IA, executa as ações de memória marcadas nela, e
+// devolve o texto já limpo (sem as marcações) pra mostrar ao usuário.
+private suspend fun processarAcoesDeMemoria(respostaIA: String, db: AgenteDatabase): String {
+    val linhasParaMostrar = mutableListOf<String>()
+
+    for (linha in respostaIA.lines()) {
+        val guardarMatch = REGEX_GUARDAR.find(linha)
+        val apagarMatch = REGEX_APAGAR.find(linha)
+
+        when {
+            guardarMatch != null -> {
+                val descricao = guardarMatch.groupValues[1].trim()
+                db.agenteDao().salvarLembrete(
+                    LembreteEntity(descricao = descricao, pessoa = null, dataCriacao = System.currentTimeMillis())
+                )
+            }
+            apagarMatch != null -> {
+                val descricaoBusca = apagarMatch.groupValues[1].trim()
+                val encontrado = db.agenteDao().listarTodosLembretes()
+                    .firstOrNull { it.descricao.contains(descricaoBusca, ignoreCase = true) }
+                if (encontrado != null) {
+                    db.agenteDao().apagarLembrete(encontrado.id)
+                }
+            }
+            else -> linhasParaMostrar.add(linha)
+        }
+    }
+
+    return linhasParaMostrar.joinToString("\n").trim()
+}
+
 suspend fun perguntarComProvedor(
     historico: List<MensagemEntity>,
     provedor: String,
     modelo: String,
-    chaveApi: String
+    chaveApi: String,
+    instrucaoSistema: String
 ): String {
     return when (provedor) {
-        "Gemini" -> chamarGemini(historico, chaveApi, modelo.ifBlank { "gemini-2.5-flash-lite" })
+        "Gemini" -> chamarGemini(historico, chaveApi, modelo.ifBlank { "gemini-2.5-flash-lite" }, instrucaoSistema)
         "OpenAI" -> chamarFormatoOpenAI(
             historico, chaveApi, modelo.ifBlank { "gpt-4o-mini" },
-            "https://api.openai.com/v1/chat/completions"
+            "https://api.openai.com/v1/chat/completions", instrucaoSistema
         )
         "OpenRouter" -> chamarFormatoOpenAI(
             historico, chaveApi, modelo,
-            "https://openrouter.ai/api/v1/chat/completions"
+            "https://openrouter.ai/api/v1/chat/completions", instrucaoSistema
         )
         "Anthropic" -> "O suporte ao provedor Anthropic ainda não foi implementado. Escolha Gemini, OpenAI ou OpenRouter por enquanto."
         else -> "Provedor \"$provedor\" ainda não é reconhecido pelo app."
     }
 }
 
-// Formato de requisição específico do Gemini.
-private suspend fun chamarGemini(historico: List<MensagemEntity>, chaveApi: String, modelo: String): String {
+private suspend fun chamarGemini(
+    historico: List<MensagemEntity>,
+    chaveApi: String,
+    modelo: String,
+    instrucaoSistema: String
+): String {
     return withContext(Dispatchers.IO) {
         try {
             val client = OkHttpClient()
@@ -91,7 +150,14 @@ private suspend fun chamarGemini(historico: List<MensagemEntity>, chaveApi: Stri
                 contents.put(item)
             }
 
-            val corpoJson = JSONObject().put("contents", contents)
+            val instrucao = JSONObject().put(
+                "parts", JSONArray().put(JSONObject().put("text", instrucaoSistema))
+            )
+
+            val corpoJson = JSONObject()
+                .put("contents", contents)
+                .put("systemInstruction", instrucao)
+
             val mediaType = "application/json".toMediaType()
             val corpo = corpoJson.toString().toRequestBody(mediaType)
 
@@ -118,19 +184,19 @@ private suspend fun chamarGemini(historico: List<MensagemEntity>, chaveApi: Stri
     }
 }
 
-// Formato de requisição usado por OpenAI e OpenRouter (é o mesmo
-// formato nos dois, só muda o endereço e o nome do modelo).
 private suspend fun chamarFormatoOpenAI(
     historico: List<MensagemEntity>,
     chaveApi: String,
     modelo: String,
-    url: String
+    url: String,
+    instrucaoSistema: String
 ): String {
     return withContext(Dispatchers.IO) {
         try {
             val client = OkHttpClient()
 
             val mensagens = JSONArray()
+            mensagens.put(JSONObject().put("role", "system").put("content", instrucaoSistema))
             for (msg in historico) {
                 val papel = if (msg.autor == "você") "user" else "assistant"
                 val item = JSONObject().put("role", papel).put("content", msg.texto)
@@ -185,7 +251,7 @@ fun TelaDeChat(aoAbrirConfig: () -> Unit) {
         val historico = db.agenteDao().listarMensagens()
         if (historico.isEmpty()) {
             db.agenteDao().salvarMensagem(
-                MensagemEntity(autor = "agente", texto = "Oi! Eu sou seu agente. Antes de conversarmos, toque no ícone de engrenagem para escolher o provedor de IA e colar sua chave de API.", dataHora = System.currentTimeMillis())
+                MensagemEntity(autor = "agente", texto = "Oi! Eu sou o Blér. Antes de conversarmos, toque no ícone de engrenagem para escolher o provedor de IA e colar sua chave de API.", dataHora = System.currentTimeMillis())
             )
         }
         mensagens = db.agenteDao().listarMensagens()
@@ -194,7 +260,7 @@ fun TelaDeChat(aoAbrirConfig: () -> Unit) {
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
 
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(text = "Meu Agente", style = MaterialTheme.typography.headlineSmall)
+            Text(text = "Blér", style = MaterialTheme.typography.headlineSmall)
             IconButton(onClick = aoAbrirConfig) {
                 Text("⚙️")
             }
@@ -238,10 +304,13 @@ fun TelaDeChat(aoAbrirConfig: () -> Unit) {
                             )
                         } else {
                             carregando = true
-                            val resposta = perguntarComProvedor(mensagens, provedor, modelo, chave)
+                            val lembretesAtuais = db.agenteDao().listarTodosLembretes()
+                            val instrucao = montarInstrucaoDeMemoria(lembretesAtuais)
+                            val respostaBruta = perguntarComProvedor(mensagens, provedor, modelo, chave, instrucao)
+                            val respostaLimpa = processarAcoesDeMemoria(respostaBruta, db)
                             carregando = false
                             db.agenteDao().salvarMensagem(
-                                MensagemEntity(autor = "agente", texto = resposta, dataHora = System.currentTimeMillis())
+                                MensagemEntity(autor = "agente", texto = respostaLimpa, dataHora = System.currentTimeMillis())
                             )
                         }
                         mensagens = db.agenteDao().listarMensagens()
