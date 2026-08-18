@@ -6,6 +6,7 @@ import androidx.room.PrimaryKey
 @Entity(tableName = "mensagens")
 data class MensagemEntity(
     @PrimaryKey(autoGenerate = true) val id: Int = 0,
+    val conversaId: Int = 1,
     val autor: String,
     val texto: String,
     val dataHora: Long
