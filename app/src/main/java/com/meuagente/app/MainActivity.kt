@@ -50,30 +50,31 @@ fun AppPrincipal() {
     }
 }
 
-// Marcações que a IA usa pra avisar o app que quer guardar ou apagar
-// uma memória. Ficam escondidas do usuário — o app lê e remove.
 private val REGEX_GUARDAR = Regex("""\[GUARDAR:\s*(.+?)\]""")
 private val REGEX_APAGAR = Regex("""\[APAGAR:\s*(.+?)\]""")
 
 // Monta a instrução que ensina a IA a se comportar como agente com
-// memória, não só chatbot — inclui a lista do que já está guardado.
+// memória de verdade. Reforçada com exemplos pra IA nunca esquecer
+// de gerar a marcação de apagar quando algo foi resolvido.
 private fun montarInstrucaoDeMemoria(lembretes: List<LembreteEntity>): String {
     val listaTexto = if (lembretes.isEmpty()) {
         "(nenhuma memória guardada ainda)"
     } else {
-        lembretes.joinToString("\n") { "- ${it.descricao}" + if (it.concluido) " (concluído)" else "" }
+        lembretes.joinToString("\n") { "- ${it.descricao}" }
     }
 
     return """
         Você é Blér, um assistente pessoal com memória real, não apenas um chatbot comum.
+
         Memórias guardadas até agora:
         $listaTexto
 
-        Regras:
-        - Se o usuário pedir para você lembrar de algo (sem data específica), adicione no FINAL da sua resposta, em uma linha separada, exatamente: [GUARDAR: descrição curta e clara]
-        - Se o usuário disser que algo já foi resolvido, pode apagar, ou não precisa mais lembrar, adicione no FINAL da resposta, em linha separada: [APAGAR: descrição que identifique a memória antiga]
-        - Nunca explique essas marcações para o usuário, nem as escreva de outra forma — elas são só para o sistema.
-        - Se o usuário perguntar o que você tem guardado, responda usando a lista acima, de forma natural e simples.
+        Regras OBRIGATÓRIAS:
+        1. Se o usuário pedir para lembrar de algo, adicione no FINAL da resposta, em linha separada, exatamente: [GUARDAR: descrição bem curta e resumida]
+        2. Se o usuário disser que algo já foi feito, resolvido, entregue, comprado, cancelado, ou que não precisa mais lembrar daquilo, você DEVE adicionar no FINAL da resposta, em linha separada: [APAGAR: texto que identifique a memória antiga]. Isso é obrigatório sempre que o usuário confirmar que algo foi concluído, mesmo que pareça óbvio pela conversa — nunca pule esse passo.
+           Exemplo: usuário diz "já entreguei o livro pro Robson" → sua resposta deve terminar com [APAGAR: livro do Robson]
+        3. Quando o usuário perguntar o que está pendente ou o que você tem guardado, responda de forma BREVE e resumida (só o essencial, tipo "lâmpada da cozinha"), sem repetir detalhes extras de tempo que o usuário deu antes (como "mais tarde" ou horários), porque isso pode não fazer mais sentido depois de dias ou meses.
+        4. Nunca escreva as marcações [GUARDAR: ] ou [APAGAR: ] de forma diferente da exata, nem explique elas ao usuário — elas são só para o sistema.
     """.trimIndent()
 }
 
@@ -96,7 +97,7 @@ private suspend fun processarAcoesDeMemoria(respostaIA: String, db: AgenteDataba
             apagarMatch != null -> {
                 val descricaoBusca = apagarMatch.groupValues[1].trim()
                 val encontrado = db.agenteDao().listarTodosLembretes()
-                    .firstOrNull { it.descricao.contains(descricaoBusca, ignoreCase = true) }
+                    .firstOrNull { it.descricao.contains(descricaoBusca, ignoreCase = true) || descricaoBusca.contains(it.descricao, ignoreCase = true) }
                 if (encontrado != null) {
                     db.agenteDao().apagarLembrete(encontrado.id)
                 }
