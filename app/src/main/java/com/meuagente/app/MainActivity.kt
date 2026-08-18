@@ -53,9 +53,6 @@ fun AppPrincipal() {
 private val REGEX_GUARDAR = Regex("""\[GUARDAR:\s*(.+?)\]""")
 private val REGEX_APAGAR = Regex("""\[APAGAR:\s*(.+?)\]""")
 
-// Monta a instrução que ensina a IA a se comportar como agente com
-// memória de verdade. Reforçada com exemplos pra IA nunca esquecer
-// de gerar a marcação de apagar quando algo foi resolvido.
 private fun montarInstrucaoDeMemoria(lembretes: List<LembreteEntity>): String {
     val listaTexto = if (lembretes.isEmpty()) {
         "(nenhuma memória guardada ainda)"
@@ -71,15 +68,12 @@ private fun montarInstrucaoDeMemoria(lembretes: List<LembreteEntity>): String {
 
         Regras OBRIGATÓRIAS:
         1. Se o usuário pedir para lembrar de algo, adicione no FINAL da resposta, em linha separada, exatamente: [GUARDAR: descrição bem curta e resumida]
-        2. Se o usuário disser que algo já foi feito, resolvido, entregue, comprado, cancelado, ou que não precisa mais lembrar daquilo, você DEVE adicionar no FINAL da resposta, em linha separada: [APAGAR: texto que identifique a memória antiga]. Isso é obrigatório sempre que o usuário confirmar que algo foi concluído, mesmo que pareça óbvio pela conversa — nunca pule esse passo.
-           Exemplo: usuário diz "já entreguei o livro pro Robson" → sua resposta deve terminar com [APAGAR: livro do Robson]
-        3. Quando o usuário perguntar o que está pendente ou o que você tem guardado, responda de forma BREVE e resumida (só o essencial, tipo "lâmpada da cozinha"), sem repetir detalhes extras de tempo que o usuário deu antes (como "mais tarde" ou horários), porque isso pode não fazer mais sentido depois de dias ou meses.
-        4. Nunca escreva as marcações [GUARDAR: ] ou [APAGAR: ] de forma diferente da exata, nem explique elas ao usuário — elas são só para o sistema.
+        2. Se o usuário disser que algo já foi feito, resolvido, entregue, comprado, cancelado, ou que não precisa mais lembrar daquilo, você DEVE adicionar no FINAL da resposta, em linha separada: [APAGAR: texto que identifique a memória antiga]. Isso é obrigatório sempre que o usuário confirmar que algo foi concluído.
+        3. Quando o usuário perguntar o que está pendente, responda de forma BREVE e resumida, sem repetir detalhes extras de tempo que possam não fazer mais sentido depois.
+        4. Nunca escreva as marcações [GUARDAR: ] ou [APAGAR: ] de forma diferente da exata, nem explique elas ao usuário.
     """.trimIndent()
 }
 
-// Lê a resposta da IA, executa as ações de memória marcadas nela, e
-// devolve o texto já limpo (sem as marcações) pra mostrar ao usuário.
 private suspend fun processarAcoesDeMemoria(respostaIA: String, db: AgenteDatabase): String {
     val linhasParaMostrar = mutableListOf<String>()
 
@@ -238,11 +232,13 @@ private suspend fun chamarFormatoOpenAI(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TelaDeChat(aoAbrirConfig: () -> Unit) {
     val contexto = LocalContext.current
     val db = remember { AgenteDatabase.obter(contexto) }
     val escopo = rememberCoroutineScope()
+    val estadoGaveta = rememberDrawerState(initialValue = DrawerValue.Closed)
 
     var mensagens by remember { mutableStateOf(listOf<MensagemEntity>()) }
     var textoDigitado by remember { mutableStateOf("") }
@@ -252,73 +248,99 @@ fun TelaDeChat(aoAbrirConfig: () -> Unit) {
         val historico = db.agenteDao().listarMensagens()
         if (historico.isEmpty()) {
             db.agenteDao().salvarMensagem(
-                MensagemEntity(autor = "agente", texto = "Oi! Eu sou o Blér. Antes de conversarmos, toque no ícone de engrenagem para escolher o provedor de IA e colar sua chave de API.", dataHora = System.currentTimeMillis())
+                MensagemEntity(autor = "agente", texto = "Oi! Eu sou o Blér. Toque no menu (☰) no canto superior esquerdo para escolher o provedor de IA e colar sua chave de API.", dataHora = System.currentTimeMillis())
             )
         }
         mensagens = db.agenteDao().listarMensagens()
     }
 
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(text = "Blér", style = MaterialTheme.typography.headlineSmall)
-            IconButton(onClick = aoAbrirConfig) {
-                Text("⚙️")
+    // Menu lateral: hoje só tem "Configurações", mas é aqui que as
+    // próximas opções do app vão entrar conforme ele cresce. Quando
+    // uma opção tiver muita informação, ela abre uma tela própria
+    // em vez de lotar o menu.
+    ModalNavigationDrawer(
+        drawerState = estadoGaveta,
+        drawerContent = {
+            ModalDrawerSheet {
+                Spacer(Modifier.height(16.dp))
+                Text(text = "Blér", modifier = Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.titleLarge)
+                Spacer(Modifier.height(8.dp))
+                HorizontalDivider()
+                NavigationDrawerItem(
+                    label = { Text("Configurações") },
+                    selected = false,
+                    onClick = {
+                        escopo.launch { estadoGaveta.close() }
+                        aoAbrirConfig()
+                    },
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                )
             }
         }
+    ) {
+        Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
 
-        LazyColumn(modifier = Modifier.weight(1f)) {
-            items(mensagens) { msg ->
-                Text(text = "${msg.autor}: ${msg.texto}", modifier = Modifier.padding(8.dp))
-            }
-            if (carregando) {
-                item {
-                    Text(text = "agente está digitando...", modifier = Modifier.padding(8.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = { escopo.launch { estadoGaveta.open() } }) {
+                    Text("☰", style = MaterialTheme.typography.headlineSmall)
                 }
+                Spacer(Modifier.width(8.dp))
+                Text(text = "Blér", style = MaterialTheme.typography.headlineSmall)
             }
-        }
 
-        Row(modifier = Modifier.fillMaxWidth()) {
-            OutlinedTextField(
-                value = textoDigitado,
-                onValueChange = { textoDigitado = it },
-                modifier = Modifier.weight(1f),
-                placeholder = { Text("Digite sua mensagem...") }
-            )
-            Button(onClick = {
-                if (textoDigitado.isNotBlank() && !carregando) {
-                    val texto = textoDigitado
-                    textoDigitado = ""
-                    val provedor = Configuracoes.obterProvedorAtual(contexto)
-                    val modelo = Configuracoes.obterModeloAtual(contexto)
-                    val chave = Configuracoes.obterChaveAtual(contexto)
-
-                    escopo.launch {
-                        db.agenteDao().salvarMensagem(
-                            MensagemEntity(autor = "você", texto = texto, dataHora = System.currentTimeMillis())
-                        )
-                        mensagens = db.agenteDao().listarMensagens()
-
-                        if (chave.isBlank()) {
-                            db.agenteDao().salvarMensagem(
-                                MensagemEntity(autor = "agente", texto = "Você ainda não configurou uma chave de API para o provedor \"$provedor\". Toque no ícone de engrenagem para adicionar uma.", dataHora = System.currentTimeMillis())
-                            )
-                        } else {
-                            carregando = true
-                            val lembretesAtuais = db.agenteDao().listarTodosLembretes()
-                            val instrucao = montarInstrucaoDeMemoria(lembretesAtuais)
-                            val respostaBruta = perguntarComProvedor(mensagens, provedor, modelo, chave, instrucao)
-                            val respostaLimpa = processarAcoesDeMemoria(respostaBruta, db)
-                            carregando = false
-                            db.agenteDao().salvarMensagem(
-                                MensagemEntity(autor = "agente", texto = respostaLimpa, dataHora = System.currentTimeMillis())
-                            )
-                        }
-                        mensagens = db.agenteDao().listarMensagens()
+            LazyColumn(modifier = Modifier.weight(1f)) {
+                items(mensagens) { msg ->
+                    Text(text = "${msg.autor}: ${msg.texto}", modifier = Modifier.padding(8.dp))
+                }
+                if (carregando) {
+                    item {
+                        Text(text = "agente está digitando...", modifier = Modifier.padding(8.dp))
                     }
                 }
-            }) {
-                Text("Enviar")
+            }
+
+            Row(modifier = Modifier.fillMaxWidth()) {
+                OutlinedTextField(
+                    value = textoDigitado,
+                    onValueChange = { textoDigitado = it },
+                    modifier = Modifier.weight(1f),
+                    placeholder = { Text("Digite sua mensagem...") }
+                )
+                Button(onClick = {
+                    if (textoDigitado.isNotBlank() && !carregando) {
+                        val texto = textoDigitado
+                        textoDigitado = ""
+                        val provedor = Configuracoes.obterProvedorAtual(contexto)
+                        val modelo = Configuracoes.obterModeloAtual(contexto)
+                        val chave = Configuracoes.obterChaveAtual(contexto)
+
+                        escopo.launch {
+                            db.agenteDao().salvarMensagem(
+                                MensagemEntity(autor = "você", texto = texto, dataHora = System.currentTimeMillis())
+                            )
+                            mensagens = db.agenteDao().listarMensagens()
+
+                            if (chave.isBlank()) {
+                                db.agenteDao().salvarMensagem(
+                                    MensagemEntity(autor = "agente", texto = "Você ainda não configurou uma chave de API para o provedor \"$provedor\". Toque no menu (☰) para adicionar uma.", dataHora = System.currentTimeMillis())
+                                )
+                            } else {
+                                carregando = true
+                                val lembretesAtuais = db.agenteDao().listarTodosLembretes()
+                                val instrucao = montarInstrucaoDeMemoria(lembretesAtuais)
+                                val respostaBruta = perguntarComProvedor(mensagens, provedor, modelo, chave, instrucao)
+                                val respostaLimpa = processarAcoesDeMemoria(respostaBruta, db)
+                                carregando = false
+                                db.agenteDao().salvarMensagem(
+                                    MensagemEntity(autor = "agente", texto = respostaLimpa, dataHora = System.currentTimeMillis())
+                                )
+                            }
+                            mensagens = db.agenteDao().listarMensagens()
+                        }
+                    }
+                }) {
+                    Text("Enviar")
+                }
             }
         }
     }
