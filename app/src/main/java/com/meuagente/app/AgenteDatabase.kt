@@ -9,8 +9,8 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
-    entities = [MensagemEntity::class, LembreteEntity::class],
-    version = 2
+    entities = [MensagemEntity::class, LembreteEntity::class, ConversaEntity::class],
+    version = 3
 )
 @TypeConverters(Converters::class)
 abstract class AgenteDatabase : RoomDatabase() {
@@ -21,13 +21,20 @@ abstract class AgenteDatabase : RoomDatabase() {
         @Volatile
         private var instancia: AgenteDatabase? = null
 
-        // Migração da versão 1 para a 2: adiciona os campos novos de
-        // agendamento e repetição na tabela de lembretes, preservando
-        // tudo que já existia (lembretes antigos e mensagens).
         private val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE lembretes ADD COLUMN dataHoraAgendada INTEGER")
                 db.execSQL("ALTER TABLE lembretes ADD COLUMN repeticao TEXT NOT NULL DEFAULT 'NENHUMA'")
+            }
+        }
+
+        // Cria a tabela de conversas (abas) e liga as mensagens
+        // antigas a uma "Conversa 1" automática, pra nada se perder.
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS conversas (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, titulo TEXT NOT NULL, dataCriacao INTEGER NOT NULL)")
+                db.execSQL("INSERT INTO conversas (id, titulo, dataCriacao) VALUES (1, 'Conversa 1', 0)")
+                db.execSQL("ALTER TABLE mensagens ADD COLUMN conversaId INTEGER NOT NULL DEFAULT 1")
             }
         }
 
@@ -37,7 +44,7 @@ abstract class AgenteDatabase : RoomDatabase() {
                     contexto.applicationContext,
                     AgenteDatabase::class.java,
                     "agente_database"
-                ).addMigrations(MIGRATION_1_2).build()
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build()
                 instancia = nova
                 nova
             }
