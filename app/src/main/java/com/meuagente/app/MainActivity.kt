@@ -9,8 +9,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
@@ -257,10 +257,10 @@ fun TelaDeChat(aoAbrirConfig: () -> Unit) {
 
     val conversaAtiva = conversas.firstOrNull { it.id == conversaAtivaId }
 
-    fun carregarMensagensDaConversa(conversaId: Int) {
+    // CORREÇÃO do build: esta função agora é suspend, então pode chamar Room (suspend).
+    suspend fun carregarMensagensDaConversa(conversaId: Int) {
         mensagens = db.agenteDao().listarMensagensDaConversa(conversaId)
         if (mensagens.isEmpty()) {
-            // Garante que a conversa "recém-criada" não fica vazia.
             db.agenteDao().salvarMensagem(
                 MensagemEntity(
                     conversaId = conversaId,
@@ -276,7 +276,6 @@ fun TelaDeChat(aoAbrirConfig: () -> Unit) {
     LaunchedEffect(Unit) {
         val conversasCarregadas = db.agenteDao().listarConversas()
         if (conversasCarregadas.isEmpty()) {
-            // Em instalação nova, não existe migração rodando; então criamos a "Conversa 1" aqui.
             val idCriado = db.agenteDao().criarConversa(
                 ConversaEntity(id = 0, titulo = "Conversa 1", dataCriacao = 0L)
             )
@@ -361,7 +360,6 @@ fun TelaDeChat(aoAbrirConfig: () -> Unit) {
         drawerContent = {
             ModalDrawerSheet {
                 Column(modifier = Modifier.fillMaxSize().padding(0.dp)) {
-
                     Spacer(Modifier.height(16.dp))
                     Text(
                         text = "Blér",
