@@ -92,7 +92,10 @@ private suspend fun processarAcoesDeMemoria(respostaIA: String, db: AgenteDataba
             apagarMatch != null -> {
                 val descricaoBusca = apagarMatch.groupValues[1].trim()
                 val encontrado = db.agenteDao().listarTodosLembretes()
-                    .firstOrNull { it.descricao.contains(descricaoBusca, ignoreCase = true) || descricaoBusca.contains(it.descricao, ignoreCase = true) }
+                    .firstOrNull {
+                        it.descricao.contains(descricaoBusca, ignoreCase = true) ||
+                            descricaoBusca.contains(it.descricao, ignoreCase = true)
+                    }
                 if (encontrado != null) {
                     db.agenteDao().apagarLembrete(encontrado.id)
                 }
@@ -241,41 +244,178 @@ fun TelaDeChat(aoAbrirConfig: () -> Unit) {
     val escopo = rememberCoroutineScope()
     val estadoGaveta = rememberDrawerState(initialValue = DrawerValue.Closed)
 
+    var conversas by remember { mutableStateOf(listOf<ConversaEntity>()) }
+    var conversaAtivaId by remember { mutableStateOf(1) }
+
     var mensagens by remember { mutableStateOf(listOf<MensagemEntity>()) }
     var textoDigitado by remember { mutableStateOf("") }
     var carregando by remember { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) {
-        val historico = db.agenteDao().listarMensagens()
-        if (historico.isEmpty()) {
+    var dialogNovaConversaAberta by remember { mutableStateOf(false) }
+    var novoTituloConversa by remember { mutableStateOf("") }
+    var erroTituloConversa by remember { mutableStateOf<String?>(null) }
+
+    val conversaAtiva = conversas.firstOrNull { it.id == conversaAtivaId }
+
+    fun carregarMensagensDaConversa(conversaId: Int) {
+        mensagens = db.agenteDao().listarMensagensDaConversa(conversaId)
+        if (mensagens.isEmpty()) {
+            // Garante que a conversa "recém-criada" não fica vazia.
             db.agenteDao().salvarMensagem(
-                MensagemEntity(autor = "agente", texto = "Oi! Eu sou o Blér. Toque no menu (☰) no canto superior esquerdo para escolher o provedor de IA e colar sua chave de API.", dataHora = System.currentTimeMillis())
+                MensagemEntity(
+                    conversaId = conversaId,
+                    autor = "agente",
+                    texto = "Oi! Eu sou o Blér. Toque no menu (☰) no canto superior esquerdo para escolher o provedor de IA e colar sua chave de API.",
+                    dataHora = System.currentTimeMillis()
+                )
             )
+            mensagens = db.agenteDao().listarMensagensDaConversa(conversaId)
         }
-        mensagens = db.agenteDao().listarMensagens()
     }
 
-    // Menu lateral: hoje só tem "Configurações", mas é aqui que as
-    // próximas opções do app vão entrar conforme ele cresce. Quando
-    // uma opção tiver muita informação, ela abre uma tela própria
-    // em vez de lotar o menu.
+    LaunchedEffect(Unit) {
+        val conversasCarregadas = db.agenteDao().listarConversas()
+        if (conversasCarregadas.isEmpty()) {
+            // Em instalação nova, não existe migração rodando; então criamos a "Conversa 1" aqui.
+            val idCriado = db.agenteDao().criarConversa(
+                ConversaEntity(id = 0, titulo = "Conversa 1", dataCriacao = 0L)
+            )
+            conversas = db.agenteDao().listarConversas()
+            conversaAtivaId = idCriado.toInt()
+        } else {
+            conversas = conversasCarregadas
+            conversaAtivaId = conversasCarregadas.firstOrNull()?.id ?: 1
+        }
+
+        carregarMensagensDaConversa(conversaAtivaId)
+    }
+
+    if (dialogNovaConversaAberta) {
+        AlertDialog(
+            onDismissRequest = {
+                dialogNovaConversaAberta = false
+                erroTituloConversa = null
+            },
+            title = { Text("Nova conversa") },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = novoTituloConversa,
+                        onValueChange = {
+                            novoTituloConversa = it
+                            erroTituloConversa = null
+                        },
+                        placeholder = { Text("Digite um título...") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    if (!erroTituloConversa.isNullOrBlank()) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            text = erroTituloConversa ?: "",
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val titulo = novoTituloConversa.trim()
+                        if (titulo.isBlank()) {
+                            erroTituloConversa = "Informe um título para a conversa."
+                            return@TextButton
+                        }
+
+                        escopo.launch {
+                            val idNova = db.agenteDao().criarConversa(
+                                ConversaEntity(id = 0, titulo = titulo, dataCriacao = System.currentTimeMillis())
+                            ).toInt()
+
+                            conversas = db.agenteDao().listarConversas()
+                            conversaAtivaId = idNova
+
+                            dialogNovaConversaAberta = false
+                            novoTituloConversa = ""
+                            erroTituloConversa = null
+
+                            carregarMensagensDaConversa(idNova)
+                            estadoGaveta.close()
+                        }
+                    }
+                ) { Text("Criar") }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        dialogNovaConversaAberta = false
+                        erroTituloConversa = null
+                    }
+                ) { Text("Cancelar") }
+            }
+        )
+    }
+
     ModalNavigationDrawer(
         drawerState = estadoGaveta,
         drawerContent = {
             ModalDrawerSheet {
-                Spacer(Modifier.height(16.dp))
-                Text(text = "Blér", modifier = Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.titleLarge)
-                Spacer(Modifier.height(8.dp))
-                HorizontalDivider()
-                NavigationDrawerItem(
-                    label = { Text("Configurações") },
-                    selected = false,
-                    onClick = {
-                        escopo.launch { estadoGaveta.close() }
-                        aoAbrirConfig()
-                    },
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
-                )
+                Column(modifier = Modifier.fillMaxSize().padding(0.dp)) {
+
+                    Spacer(Modifier.height(16.dp))
+                    Text(
+                        text = "Blér",
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        style = MaterialTheme.typography.titleLarge
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    HorizontalDivider()
+
+                    LazyColumn(modifier = Modifier.weight(1f, fill = true)) {
+                        items(conversas) { conv ->
+                            NavigationDrawerItem(
+                                label = { Text(conv.titulo) },
+                                selected = conv.id == conversaAtivaId,
+                                onClick = {
+                                    escopo.launch {
+                                        conversaAtivaId = conv.id
+                                        carregarMensagensDaConversa(conv.id)
+                                        estadoGaveta.close()
+                                    }
+                                },
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+
+                    Button(
+                        onClick = {
+                            novoTituloConversa = ""
+                            erroTituloConversa = null
+                            dialogNovaConversaAberta = true
+                        },
+                        modifier = Modifier
+                            .padding(horizontal = 16.dp)
+                            .fillMaxWidth()
+                    ) {
+                        Text("Nova conversa")
+                    }
+
+                    Spacer(Modifier.height(8.dp))
+                    HorizontalDivider()
+
+                    NavigationDrawerItem(
+                        label = { Text("Configurações") },
+                        selected = false,
+                        onClick = {
+                            escopo.launch { estadoGaveta.close() }
+                            aoAbrirConfig()
+                        },
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                    )
+
+                    Spacer(Modifier.height(16.dp))
+                }
             }
         }
     ) {
@@ -286,7 +426,11 @@ fun TelaDeChat(aoAbrirConfig: () -> Unit) {
                     Text("☰", style = MaterialTheme.typography.headlineSmall)
                 }
                 Spacer(Modifier.width(8.dp))
-                Text(text = "Blér", style = MaterialTheme.typography.headlineSmall)
+                Column {
+                    Text(text = "Blér", style = MaterialTheme.typography.headlineSmall)
+                    val titulo = conversaAtiva?.titulo ?: "Conversa"
+                    Text(text = titulo, style = MaterialTheme.typography.labelLarge)
+                }
             }
 
             LazyColumn(modifier = Modifier.weight(1f)) {
@@ -311,32 +455,59 @@ fun TelaDeChat(aoAbrirConfig: () -> Unit) {
                     if (textoDigitado.isNotBlank() && !carregando) {
                         val texto = textoDigitado
                         textoDigitado = ""
+                        val conversaIdAtual = conversaAtivaId
+
                         val provedor = Configuracoes.obterProvedorAtual(contexto)
                         val modelo = Configuracoes.obterModeloAtual(contexto)
                         val chave = Configuracoes.obterChaveAtual(contexto)
 
                         escopo.launch {
                             db.agenteDao().salvarMensagem(
-                                MensagemEntity(autor = "você", texto = texto, dataHora = System.currentTimeMillis())
+                                MensagemEntity(
+                                    conversaId = conversaIdAtual,
+                                    autor = "você",
+                                    texto = texto,
+                                    dataHora = System.currentTimeMillis()
+                                )
                             )
-                            mensagens = db.agenteDao().listarMensagens()
+                            mensagens = db.agenteDao().listarMensagensDaConversa(conversaIdAtual)
 
                             if (chave.isBlank()) {
                                 db.agenteDao().salvarMensagem(
-                                    MensagemEntity(autor = "agente", texto = "Você ainda não configurou uma chave de API para o provedor \"$provedor\". Toque no menu (☰) para adicionar uma.", dataHora = System.currentTimeMillis())
+                                    MensagemEntity(
+                                        conversaId = conversaIdAtual,
+                                        autor = "agente",
+                                        texto = "Você ainda não configurou uma chave de API para o provedor \"$provedor\". Toque no menu (☰) para adicionar uma.",
+                                        dataHora = System.currentTimeMillis()
+                                    )
                                 )
                             } else {
                                 carregando = true
                                 val lembretesAtuais = db.agenteDao().listarTodosLembretes()
                                 val instrucao = montarInstrucaoDeMemoria(lembretesAtuais)
-                                val respostaBruta = perguntarComProvedor(mensagens, provedor, modelo, chave, instrucao)
+
+                                val respostaBruta = perguntarComProvedor(
+                                    historico = mensagens,
+                                    provedor = provedor,
+                                    modelo = modelo,
+                                    chaveApi = chave,
+                                    instrucaoSistema = instrucao
+                                )
+
                                 val respostaLimpa = processarAcoesDeMemoria(respostaBruta, db)
                                 carregando = false
+
                                 db.agenteDao().salvarMensagem(
-                                    MensagemEntity(autor = "agente", texto = respostaLimpa, dataHora = System.currentTimeMillis())
+                                    MensagemEntity(
+                                        conversaId = conversaIdAtual,
+                                        autor = "agente",
+                                        texto = respostaLimpa,
+                                        dataHora = System.currentTimeMillis()
+                                    )
                                 )
                             }
-                            mensagens = db.agenteDao().listarMensagens()
+
+                            mensagens = db.agenteDao().listarMensagensDaConversa(conversaIdAtual)
                         }
                     }
                 }) {
