@@ -57,12 +57,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            val escuro = isSystemInDarkTheme()
-            val cores = if (escuro) darkColorScheme() else lightColorScheme()
-
-            MaterialTheme(colorScheme = cores) {
-                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    AppPrincipal()
+            MaterialTheme(colorScheme = darkColorScheme()) {
+                Surface(modifier = Modifier.fillMaxSize(), color = Color(0xFF05050F)) {
+                    com.meuagente.app.ui.TelaChatBler()
                 }
             }
         }
