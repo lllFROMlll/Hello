@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
@@ -135,6 +136,62 @@ fun LogoBler(modifier: Modifier = Modifier) {
             drawLine(
                 brush = Brush.horizontalGradient(
                     colors = listOf(Color.Transparent, BlerNeonCiano, Color.Transparent)
+                ),
+                start = Offset(0f, size.height / 2f),
+                end = Offset(size.width, size.height / 2f),
+                strokeWidth = 3f
+            )
+        }
+    }
+}
+
+@Composable
+fun TopoChatBler(aoAbrirGaveta: () -> Unit, aoOpcoes: () -> Unit) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                color = BlerFundoCabecalho,
+                shape = RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp)
+            )
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .statusBarsPadding()
+                .padding(horizontal = 16.dp, vertical = 10.dp)
+        ) {
+            BotaoCircularNeon(
+                iconeRes = R.drawable.ic_voltar,
+                descricao = "Histórico de conversas",
+                tamanho = 48.dp,
+                modifier = Modifier.align(Alignment.CenterStart),
+                aoClicar = aoAbrirGaveta
+            )
+            BotaoCircularNeon(
+                iconeRes = R.drawable.ic_mais_opcoes,
+                descricao = "Mais opções",
+                tamanho = 48.dp,
+                modifier = Modifier.align(Alignment.CenterEnd),
+                aoClicar = aoOpcoes
+            )
+        }
+        Canvas(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 10.dp)
+                .height(2.dp)
+        ) {
+            drawLine(
+                brush = Brush.horizontalGradient(
+                    colors = listOf(
+                        Color.Transparent,
+                        BlerNeonRoxo,
+                        BlerNeonRoxo,
+                        Color.Transparent
+                    )
                 ),
                 start = Offset(0f, size.height / 2f),
                 end = Offset(size.width, size.height / 2f),

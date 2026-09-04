@@ -14,6 +14,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
@@ -42,7 +43,16 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import com.meuagente.app.ui.BarraDeEntrada
+import com.meuagente.app.ui.BlerFundoBase
+import com.meuagente.app.ui.BlerFundoTopo
+import com.meuagente.app.ui.BlerTextoHora
+import com.meuagente.app.ui.BolhaMensagem
+import com.meuagente.app.ui.TopoChatBler
 import java.io.IOException
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 // ═══════════════════════════════════════════════════════════════════
 // CORES NEON DO PROJETO BLÉR
@@ -59,7 +69,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             MaterialTheme(colorScheme = darkColorScheme()) {
                 Surface(modifier = Modifier.fillMaxSize(), color = Color(0xFF05050F)) {
-                    com.meuagente.app.ui.TelaChatBler()
+                    AppPrincipal()
                 }
             }
         }
@@ -83,6 +93,9 @@ fun AppPrincipal() {
 
 private val REGEX_GUARDAR = Regex("""\[GUARDAR:\s*(.+?)\]""")
 private val REGEX_APAGAR = Regex("""\[APAGAR:\s*(.+?)\]""")
+
+private fun formatarHora(dataHora: Long): String =
+    SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(dataHora))
 
 private fun montarInstrucaoDeMemoria(lembretes: List<LembreteEntity>): String {
     val listaTexto = if (lembretes.isEmpty()) {
@@ -712,138 +725,99 @@ fun TelaDeChat(aoAbrirConfig: () -> Unit) {
             }
         }
     ) {
-        Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(brush = Brush.verticalGradient(listOf(BlerFundoTopo, BlerFundoBase)))
+        ) {
 
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = { escopo.launch { estadoGaveta.open() } }) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_menu),
-                        contentDescription = "Menu",
-                        tint = NeonAzul,
-                        modifier = Modifier.size(26.dp)
-                    )
-                }
-                Spacer(Modifier.width(8.dp))
-                Text(text = "Blér", style = MaterialTheme.typography.headlineSmall)
-            }
-
-            Canvas(modifier = Modifier.fillMaxWidth().height(2.dp)) {
-                drawLine(
-                    brush = Brush.horizontalGradient(listOf(NeonAzul, NeonLilas, NeonRosa)),
-                    start = Offset(0f, 0f),
-                    end = Offset(size.width, 0f),
-                    strokeWidth = 2f
-                )
-            }
-            Spacer(Modifier.height(8.dp))
-
-            // ── Barra de abas de conversas ──
-            ScrollableTabRow(
-                selectedTabIndex = conversas.indexOfFirst { it.id == conversaAtualId }.coerceAtLeast(0),
-                modifier = Modifier.fillMaxWidth(),
-                edgePadding = 0.dp
-            ) {
-                conversas.forEach { conversa ->
-                    Tab(
-                        selected = conversa.id == conversaAtualId,
-                        onClick = { abrirConversa(conversa.id) },
-                        text = {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = conversa.titulo,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    modifier = Modifier.widthIn(max = 120.dp)
-                                )
-                                Spacer(Modifier.width(4.dp))
-                                Box(
-                                    modifier = Modifier
-                                        .size(18.dp)
-                                        .clickable { confirmarExclusaoId = conversa.id },
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text("✕", fontSize = 12.sp)
-                                }
-                            }
-                        }
-                    )
-                }
-                Tab(
-                    selected = false,
-                    onClick = { criarNovaConversa() },
-                    text = { Text("+", style = MaterialTheme.typography.titleLarge) }
-                )
-            }
+            TopoChatBler(
+                aoAbrirGaveta = { escopo.launch { estadoGaveta.open() } },
+                aoOpcoes = {}
+            )
 
             LazyColumn(
                 state = listaState,
-                modifier = Modifier.weight(1f)
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp)
             ) {
                 items(mensagens) { msg ->
-                    Text(text = "${msg.autor}: ${msg.texto}", modifier = Modifier.padding(8.dp))
+                    BolhaMensagem(
+                        texto = msg.texto,
+                        hora = formatarHora(msg.dataHora),
+                        enviada = msg.autor == "você"
+                    )
                 }
                 if (carregando) {
                     item {
-                        Text(text = "agente está digitando...", modifier = Modifier.padding(8.dp))
+                        Text(
+                            text = "agente está digitando...",
+                            color = BlerTextoHora,
+                            fontSize = 14.sp,
+                            modifier = Modifier.padding(horizontal = 12.dp)
+                        )
                     }
                 }
                 if (estadoVoz == EstadoVoz.TRANSCREVENDO) {
                     item {
-                        Text(text = "Transcrevendo sua fala...", modifier = Modifier.padding(8.dp))
+                        Text(
+                            text = "Transcrevendo sua fala...",
+                            color = BlerTextoHora,
+                            fontSize = 14.sp,
+                            modifier = Modifier.padding(horizontal = 12.dp)
+                        )
                     }
                 }
             }
 
-            // ── Linha de digitação (texto) ──
-            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                OutlinedTextField(
-                    value = textoDigitado,
-                    onValueChange = { textoDigitado = it },
-                    modifier = Modifier.weight(1f),
-                    placeholder = { Text("Digite sua mensagem...") }
+            // ── Rodapé de voz: apenas revisão de transcrição pronta ──
+            if (estadoVoz == EstadoVoz.PRONTO) {
+                RodapeDeVoz(
+                    estado = estadoVoz,
+                    modoAtual = modoVozAtual,
+                    textoTranscrito = textoTranscrito,
+                    aoAlternarModo = { alternarModoVoz() },
+                    aoIniciar = {},
+                    aoEnviar = { enviarTranscricao() },
+                    aoEditarTexto = { textoTranscrito = it },
+                    modifier = Modifier.padding(horizontal = 14.dp)
                 )
-                Spacer(Modifier.width(8.dp))
-                Button(onClick = {
-                    if (textoDigitado.isNotBlank() && !carregando) {
-                        val texto = textoDigitado
-                        textoDigitado = ""
-                        enviarMensagem(texto, conversaAtualId)
-                    }
-                }) {
-                    Text("Enviar")
-                }
+                Spacer(Modifier.height(8.dp))
             }
 
-            Spacer(Modifier.height(4.dp))
-
-            // ── Rodapé de voz (alternador de modo + microfone + revisão) ──
-            RodapeDeVoz(
-                estado = estadoVoz,
-                modoAtual = modoVozAtual,
-                textoTranscrito = textoTranscrito,
-                aoAlternarModo = { alternarModoVoz() },
-                aoIniciar = {
-                    val permissao = ContextCompat.checkSelfPermission(contexto, Manifest.permission.RECORD_AUDIO)
-                    if (permissao == PackageManager.PERMISSION_GRANTED) {
-                        iniciarComandoVoz()
-                    } else {
-                        pedirPermissao.launch(Manifest.permission.RECORD_AUDIO)
+            // ── Linha de digitação (texto) com comando de voz ──
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp)
+                    .navigationBarsPadding()
+                    .imePadding()
+            ) {
+                BarraDeEntrada(
+                    texto = textoDigitado,
+                    aoMudarTexto = { textoDigitado = it },
+                    aoClicarMicrofone = {
+                        val permissao = ContextCompat.checkSelfPermission(contexto, Manifest.permission.RECORD_AUDIO)
+                        if (permissao == PackageManager.PERMISSION_GRANTED) {
+                            iniciarComandoVoz()
+                        } else {
+                            pedirPermissao.launch(Manifest.permission.RECORD_AUDIO)
+                        }
+                    },
+                    aoClicarEnviar = {
+                        if (textoDigitado.isNotBlank() && !carregando) {
+                            val texto = textoDigitado
+                            textoDigitado = ""
+                            enviarMensagem(texto, conversaAtualId)
+                        }
                     }
-                },
-                aoEnviar = { enviarTranscricao() },
-                aoEditarTexto = { textoTranscrito = it }
-            )
-
+                )
+            }
             Spacer(Modifier.height(8.dp))
-            Canvas(modifier = Modifier.fillMaxWidth().height(2.dp)) {
-                drawLine(
-                    brush = Brush.horizontalGradient(listOf(NeonRosa, NeonLilas, NeonAzul)),
-                    start = Offset(0f, 0f),
-                    end = Offset(size.width, 0f),
-                    strokeWidth = 2f
-                )
-            }
         }
 
         // ── Overlay de imersão do comando de voz (globo + ondas) ──

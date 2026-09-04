@@ -72,12 +72,13 @@ fun RodapeDeVoz(
             )
         }
 
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.End
-        ) {
-            // Botão enviar (quando PRONTO)
-            if (estado == EstadoVoz.PRONTO) {
+        // ── Revisão da transcrição (apenas PRONTO) ──
+        if (estado == EstadoVoz.PRONTO) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.End,
+                modifier = Modifier.fillMaxWidth()
+            ) {
                 IconButton(
                     onClick = {
                         FxSons.clique(contexto)
@@ -92,66 +93,70 @@ fun RodapeDeVoz(
                     )
                 }
             }
-
-            Spacer(Modifier.width(8.dp))
-
-            // ── Alternador de modo (Auto / IA / Nativo) ──
-            IconButton(
-                onClick = {
-                    FxSons.clique(contexto)
-                    aoAlternarModo()
-                }
+        } else {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.End,
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Icon(
-                    painter = painterResource(ControladorModoVoz.icone(modoAtual)),
-                    contentDescription = "Modo de voz: ${modoAtual.name}",
-                    tint = NeonLilas,
-                    modifier = Modifier.size(24.dp)
-                )
-            }
-
-            Spacer(Modifier.width(8.dp))
-
-            // ── Botão principal de microfone ──
-            Box(
-                modifier = Modifier
-                    .size(56.dp)
-                    .background(
-                        brush = Brush.radialGradient(
-                            listOf(NeonAzul, NeonLilas)
-                        ),
-                        shape = CircleShape
-                    )
-            ) {
+                // ── Alternador de modo (Auto / IA / Nativo) ──
                 IconButton(
                     onClick = {
                         FxSons.clique(contexto)
-                        when (estado) {
-                            EstadoVoz.INATIVO -> aoIniciar()
-                            EstadoVoz.TRANSCREVENDO -> {}
-                            else -> {}
-                        }
-                    },
-                    modifier = Modifier.fillMaxSize(),
-                    enabled = estado != EstadoVoz.TRANSCREVENDO
+                        aoAlternarModo()
+                    }
                 ) {
-                    when (estado) {
-                        EstadoVoz.TRANSCREVENDO -> {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(26.dp),
-                                color = Color.White,
-                                strokeWidth = 3.dp
-                            )
-                        }
-                        else -> {
-                            Icon(
-                                painter = painterResource(
-                                    if (estado == EstadoVoz.GRAVANDO) R.drawable.ic_stop else R.drawable.ic_mic
-                                ),
-                                contentDescription = "Microfone",
-                                tint = Color.White,
-                                modifier = Modifier.size(28.dp)
-                            )
+                    Icon(
+                        painter = painterResource(ControladorModoVoz.icone(modoAtual)),
+                        contentDescription = "Modo de voz: ${modoAtual.name}",
+                        tint = NeonLilas,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+
+                Spacer(Modifier.width(8.dp))
+
+                // ── Botão principal de microfone ──
+                Box(
+                    modifier = Modifier
+                        .size(56.dp)
+                        .background(
+                            brush = Brush.radialGradient(
+                                listOf(NeonAzul, NeonLilas)
+                            ),
+                            shape = CircleShape
+                        )
+                ) {
+                    IconButton(
+                        onClick = {
+                            FxSons.clique(contexto)
+                            when (estado) {
+                                EstadoVoz.INATIVO -> aoIniciar()
+                                EstadoVoz.TRANSCREVENDO -> {}
+                                else -> {}
+                            }
+                        },
+                        modifier = Modifier.fillMaxSize(),
+                        enabled = estado != EstadoVoz.TRANSCREVENDO
+                    ) {
+                        when (estado) {
+                            EstadoVoz.TRANSCREVENDO -> {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(26.dp),
+                                    color = Color.White,
+                                    strokeWidth = 3.dp
+                                )
+                            }
+                            else -> {
+                                Icon(
+                                    painter = painterResource(
+                                        if (estado == EstadoVoz.GRAVANDO) R.drawable.ic_stop else R.drawable.ic_mic
+                                    ),
+                                    contentDescription = "Microfone",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(28.dp)
+                                )
+                            }
                         }
                     }
                 }
