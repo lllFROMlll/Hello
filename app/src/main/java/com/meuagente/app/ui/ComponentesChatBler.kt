@@ -34,6 +34,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
@@ -254,7 +255,7 @@ fun BolhaMensagem(
     enviada: Boolean,
     mostrarCheck: Boolean = false
 ) {
-    val forma = FormaBolhaComCauda(caudaNaDireita = enviada)
+    val forma = FormaBolhaComCauda(caudaNaDireita = enviada, raio = 26.dp)
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = if (enviada) Arrangement.End else Arrangement.Start
@@ -262,13 +263,58 @@ fun BolhaMensagem(
         Box(modifier = Modifier.widthIn(max = 320.dp)) {
             Column(
                 modifier = Modifier
-                    .background(color = BlerSuperficieBolha, shape = forma)
-                    .border(
-                        width = 1.6.dp,
-                        brush = if (enviada) GradienteBolhaEnviada else GradienteBolhaRecebida,
-                        shape = forma
-                    )
-                    .padding(start = 18.dp, end = 18.dp, top = 14.dp, bottom = 20.dp)
+                    .drawBehind {
+                        val outline = forma.createOutline(size, layoutDirection, this)
+                        val path = (outline as? Outline.Generic)?.path ?: return@drawBehind
+                        val brilho = if (enviada) BlerNeonCiano else BlerNeonRoxo
+
+                        // Glow externo (halo neon)
+                        drawPath(path, color = brilho.copy(alpha = 0.14f), style = Stroke(width = 20f))
+                        drawPath(path, color = brilho.copy(alpha = 0.28f), style = Stroke(width = 10f))
+
+                        // Corpo 3D: azul-marinho profundo com degradê
+                        drawPath(
+                            path,
+                            brush = Brush.verticalGradient(
+                                colors = listOf(Color(0xFF151A45), Color(0xFF0A0C24), Color(0xFF04040E))
+                            )
+                        )
+
+                        // Tinta roxa sutil no topo
+                        drawPath(
+                            path,
+                            brush = Brush.verticalGradient(
+                                colors = listOf(Color(0x596A4FC9), Color.Transparent),
+                                startY = 0f,
+                                endY = size.height * 0.45f
+                            )
+                        )
+
+                        // Reflexo especular no canto superior
+                        drawPath(
+                            path,
+                            brush = Brush.linearGradient(
+                                colors = listOf(Color(0x3DFFFFFF), Color.Transparent),
+                                start = Offset(size.width * 0.62f, 0f),
+                                end = Offset(size.width * 0.98f, size.height * 0.42f)
+                            )
+                        )
+
+                        // Contorno neon: roxo (topo) → azul → ciano vivo (base)
+                        drawPath(
+                            path,
+                            brush = Brush.verticalGradient(
+                                colors = listOf(Color(0xFF8A6CFF), Color(0xFF2FA8FF), Color(0xFF2BE0FF))
+                            ),
+                            style = Stroke(width = 3f)
+                        )
+                        drawPath(
+                            path,
+                            color = Color(0xFFBFF3FF).copy(alpha = 0.85f),
+                            style = Stroke(width = 1f)
+                        )
+                    }
+                    .padding(start = 18.dp, end = 18.dp, top = 16.dp, bottom = 22.dp)
             ) {
                 Text(text = texto, color = BlerTexto, fontSize = 16.sp, lineHeight = 23.sp)
                 Spacer(modifier = Modifier.height(4.dp))
