@@ -105,8 +105,18 @@ private fun montarInstrucaoDeMemoria(lembretes: List<LembreteEntity>): String {
         lembretes.joinToString("\n") { "- ${it.descricao}" }
     }
 
+    val agora = java.time.LocalDateTime.now()
+    val dataReal = agora.format(
+        java.time.format.DateTimeFormatter.ofPattern("EEEE, dd 'de' MMMM 'de' yyyy", Locale.getDefault())
+    )
+    val horaReal = agora.format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))
+
     return """
         Você é Blér, um assistente pessoal com memória real, não apenas um chatbot comum.
+
+        DATA REAL DE HOJE: $dataReal
+        HORA REAL AGORA: $horaReal (horário local do celular do usuário)
+        IMPORTANTE: esses valores de data e hora são REAIS e confiáveis, lidos do relógio do aparelho no momento desta mensagem. Confie neles para qualquer cálculo de prazo, agendamento, lembrete ou resposta sobre "hoje", "agora", "amanhã" etc. NUNCA suponha, estime ou invente data e hora por conta própria.
 
         Memórias guardadas até agora:
         $listaTexto
