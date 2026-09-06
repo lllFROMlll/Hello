@@ -13,6 +13,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -823,14 +824,15 @@ fun TelaDeChat(aoAbrirConfig: () -> Unit) {
         // ── Overlay de imersão do comando de voz (globo + ondas) ──
         AnimatedVisibility(
             visible = emImersao,
-            enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
-            exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
+            enter = slideInVertically(animationSpec = tween(550), initialOffsetY = { it }) + fadeIn(animationSpec = tween(550)),
+            exit = slideOutVertically(animationSpec = tween(480), targetOffsetY = { it }) + fadeOut(animationSpec = tween(480))
         ) {
             ImersaoVoz(
                 intensidade = intensidadeVoz,
                 textoParcial = textoParcialVoz,
                 caminhoAtivo = caminhoVozAtivo,
-                onParar = { pararComandoVoz() }
+                onParar = { pararComandoVoz() },
+                aoSair = { cancelarComandoVoz() }
             )
         }
 

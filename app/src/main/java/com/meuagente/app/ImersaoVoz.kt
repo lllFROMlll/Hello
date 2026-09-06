@@ -2,142 +2,312 @@ package com.meuagente.app
 
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.TileMode
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.meuagente.app.ui.BotaoCircularNeon
+import kotlin.math.PI
+import kotlin.math.abs
+import kotlin.math.sin
 
-// Cores neon vivas da imersão de voz
-private val NeonAzul = Color(0xFF00E5FF)
-private val NeonLilas = Color(0xFFB388FF)
-private val NeonRosa = Color(0xFFFF4DDE)
-private val FundoChumbo = Color(0xFF12141A)
+private val FundoImersao = Color(0xFF040610)
+private val TealAnel = Color(0xFF38E8C8)
+private val RosaAnel = Color(0xFFC86BFF)
 
 /**
- * Tela de IMERSÃO total do comando de voz.
- *
- * - Fica sobre tudo (rodapé some) com fundo escuro.
- * - Mostra um GLOBO pulsante com cor neon vibrante.
- * - As ondas reagem à intensidade da voz em tempo real.
- * - Mostra a transcrição parcial ao vivo (nativo flui; IA mostra "escutando...").
- * - Toque no globo = parar gravação (com som de despedida).
+ * Tela de IMERSÃO do comando de voz, fiel ao vídeo de referência:
+ * - Topo do chat permanece visível sob véu escuro, com a seta ‹ para sair.
+ * - Orbe luminosa (ciano/azul com manchas magenta) cercada por anéis
+ *   concêntricos que pulam/expandem conforme a intensidade da voz.
+ * - Cartão de legenda com a transcrição ao vivo em aparecimento suave
+ *   (trecho reconhecido destacado em ciano).
+ * - Equalizador de barras no rodapé reagindo ao áudio.
+ * - Toque na orbe ou na seta ‹ encerra a imersão.
  */
 @Composable
 fun ImersaoVoz(
     intensidade: Float,
     textoParcial: String,
     caminhoAtivo: String,
-    onParar: () -> Unit
+    onParar: () -> Unit,
+    aoSair: () -> Unit = onParar
 ) {
     val contexto = LocalContext.current
-    val transicao = rememberInfiniteTransition(label = "globo")
+    val transicao = rememberInfiniteTransition(label = "voz")
 
-    // Pulsação lenta do globo para dar a sensação de "vivo".
+    val tempo by transicao.animateFloat(
+        initialValue = 0f,
+        targetValue = (2f * PI).toFloat(),
+        animationSpec = infiniteRepeatable(animation = tween(4200), repeatMode = RepeatMode.Restart),
+        label = "tempo"
+    )
     val pulso by transicao.animateFloat(
-        initialValue = 1.0f,
-        targetValue = 1.08f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(900),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "pulso_globo"
+        initialValue = 0.97f,
+        targetValue = 1.05f,
+        animationSpec = infiniteRepeatable(animation = tween(1400), repeatMode = RepeatMode.Reverse),
+        label = "pulso"
     )
 
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = FundoChumbo
-    ) {
-        Column(
+    val nivel = intensidade.coerceIn(0f, 1f)
+    val interacaoOrbe = remember { MutableInteractionSource() }
+
+    // Aparecimento suave da legenda a cada novo texto reconhecido
+    var alphaLegendaAlvo by remember { mutableFloatStateOf(0f) }
+    val alphaLegenda by animateFloatAsState(
+        targetValue = alphaLegendaAlvo,
+        animationSpec = tween(650),
+        label = "alpha_legenda"
+    )
+    LaunchedEffect(textoParcial) {
+        alphaLegendaAlvo = 0f
+        alphaLegendaAlvo = 1f
+    }
+
+    Surface(color = Color.Transparent) {
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+                .background(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            Color(0x33040610),
+                            Color(0xD9040610),
+                            FundoImersao
+                        ),
+                        startY = 0f,
+                        endY = 1000f
+                    )
+                )
         ) {
-            // ── Globo pulsante neon ──
+            // Seta ‹ sobre o topo: volta ao chat normal
             Box(
                 modifier = Modifier
-                    .size(180.dp)
-                    .graphicsLayer {
-                        scaleX = pulso
-                        scaleY = pulso
-                    }
-                    .shadow(40.dp, CircleShape, clip = false)
-                    .background(
-                        brush = Brush.radialGradient(
-                            listOf(NeonAzul, NeonLilas, NeonRosa)
-                        ),
-                        shape = CircleShape
-                    )
-                    .drawBehind {
-                        val raio = size.minDimension / 2f + 18.dp.toPx()
-                        drawCircle(
-                            color = NeonAzul.copy(alpha = 0.35f),
-                            radius = raio,
-                            center = center
-                        )
-                    }
-                    .clickable {
-                        FxSons.despedir(contexto)
-                        onParar()
-                    },
-                contentAlignment = Alignment.Center
+                    .padding(start = 16.dp, top = 42.dp)
             ) {
-                // Ícone de parar dentro do globo
-                Text("▪", color = Color.White, fontSize = 56.sp)
+                BotaoCircularNeon(
+                    iconeRes = com.meuagente.app.R.drawable.ic_voltar,
+                    descricao = "Voltar ao chat",
+                    tamanho = 48.dp,
+                    aoClicar = aoSair
+                )
             }
 
-            Spacer(Modifier.height(24.dp))
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Spacer(modifier = Modifier.height(120.dp))
 
-            // ── Onda reativa à intensidade da voz ──
-            OndaNeonVoz(intensidade = intensidade)
-            Spacer(Modifier.height(16.dp))
+                // ── Orbe luminosa com anéis reativos ──
+                Canvas(
+                    modifier = Modifier
+                        .size(240.dp)
+                        .graphicsLayer {
+                            val escala = pulso + nivel * 0.06f
+                            scaleX = escala
+                            scaleY = escala
+                        }
+                        .clickable(
+                            interactionSource = interacaoOrbe,
+                            indication = null
+                        ) {
+                            FxSons.despedir(contexto)
+                            onParar()
+                        }
+                ) {
+                    val centro = Offset(size.width / 2f, size.height / 2f)
+                    val raioBase = size.minDimension * 0.27f
+                    val traco = PathEffect.dashPathEffect(floatArrayOf(14f, 12f))
 
-            // ── Canal ativo (IA / Nativo) ──
-            Text(
-                text = "Escutando via $caminhoAtivo",
-                color = NeonLilas,
-                fontSize = 14.sp,
-                style = MaterialTheme.typography.labelLarge
-            )
+                    // Halo difuso geral
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            colors = listOf(Color(0x334FC8F8), Color.Transparent),
+                            center = centro,
+                            radius = raioBase * 2.1f
+                        ),
+                        radius = raioBase * 2.1f,
+                        center = centro
+                    )
 
-            Spacer(Modifier.height(12.dp))
+                    // Anéis externos tracejados (verde-água) — expandem com a voz
+                    drawCircle(
+                        color = TealAnel.copy(alpha = 0.28f + nivel * 0.25f),
+                        radius = raioBase * 1.85f + nivel * 26f,
+                        center = centro,
+                        style = Stroke(width = 2.5f, pathEffect = traco)
+                    )
+                    drawCircle(
+                        color = TealAnel.copy(alpha = 0.55f),
+                        radius = raioBase * 1.55f - nivel * 16f,
+                        center = centro,
+                        style = Stroke(width = 2f)
+                    )
 
-            // ── Transcrição ao vivo ──
-            Text(
-                text = textoParcial.ifBlank { "..." },
-                color = Color.White,
-                fontSize = 20.sp,
-                textAlign = TextAlign.Center,
-                maxLines = 5,
-                style = MaterialTheme.typography.titleMedium
-            )
+                    // Anel rosa/roxo tracejado — contrafase com a voz
+                    drawCircle(
+                        color = RosaAnel.copy(alpha = 0.45f + nivel * 0.3f),
+                        radius = raioBase * 1.32f + (1f - nivel) * 14f,
+                        center = centro,
+                        style = Stroke(width = 3f, pathEffect = traco)
+                    )
 
-            Spacer(Modifier.height(20.dp))
+                    // Esfera central
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                Color(0xFFF4FFFF),
+                                Color(0xFFA5F3FF),
+                                Color(0xFF54CDF8),
+                                Color(0xFF2E6FD8)
+                            ),
+                            center = centro,
+                            radius = raioBase,
+                            tileMode = TileMode.Clamp
+                        ),
+                        radius = raioBase,
+                        center = centro
+                    )
 
-            Text(
-                text = "Toque no globo para parar",
-                color = Color.White.copy(alpha = 0.6f),
-                fontSize = 13.sp
-            )
+                    // Manchas magenta internas
+                    val mancha1 = Offset(centro.x + raioBase * 0.42f, centro.y + raioBase * 0.38f)
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            colors = listOf(Color(0x99E34FD0), Color.Transparent),
+                            center = mancha1,
+                            radius = raioBase * 0.55f
+                        ),
+                        radius = raioBase * 0.55f,
+                        center = mancha1
+                    )
+                    val mancha2 = Offset(centro.x - raioBase * 0.5f, centro.y - raioBase * 0.1f)
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            colors = listOf(Color(0x66FF5EDB), Color.Transparent),
+                            center = mancha2,
+                            radius = raioBase * 0.4f
+                        ),
+                        radius = raioBase * 0.4f,
+                        center = mancha2
+                    )
+
+                    // Contorno suave da esfera
+                    drawCircle(
+                        color = Color(0xFF9FF2FF).copy(alpha = 0.5f),
+                        radius = raioBase,
+                        center = centro,
+                        style = Stroke(width = 1.5f)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(36.dp))
+
+                // ── Cartão de legenda com transcrição ao vivo ──
+                val texto = textoParcial.ifBlank { "..." }
+                val inicioDestaque = if (texto.length > 18) texto.length - (texto.length / 3).coerceIn(6, 26) else 0
+                val legenda = buildAnnotatedString {
+                    append("\u201C")
+                    if (inicioDestaque > 0) append(texto, 0, inicioDestaque)
+                    withStyle(SpanStyle(color = Color(0xFF35E0FF), fontWeight = FontWeight.SemiBold)) {
+                        append(texto, inicioDestaque, texto.length)
+                    }
+                    append("\u201D")
+                }
+                Box(
+                    modifier = Modifier
+                        .widthIn(max = 300.dp)
+                        .graphicsLayer { alpha = alphaLegenda }
+                        .background(
+                            color = Color(0xE6101426),
+                            shape = RoundedCornerShape(18.dp)
+                        )
+                        .border(1.dp, Color(0x3338E8C8), RoundedCornerShape(18.dp))
+                        .padding(horizontal = 18.dp, vertical = 14.dp)
+                ) {
+                    Text(
+                        text = legenda,
+                        color = Color.White,
+                        fontSize = 16.sp,
+                        lineHeight = 22.sp,
+                        textAlign = TextAlign.Center
+                    )
+                }
+
+                Spacer(modifier = Modifier.weight(1f))
+
+                // ── Equalizador reativo no rodapé ──
+                Canvas(
+                    modifier = Modifier
+                        .padding(bottom = 48.dp)
+                        .size(width = 130.dp, height = 30.dp)
+                ) {
+                    desenharEqualizador(nivel = nivel, tempo = tempo, size = size)
+                }
+            }
         }
+    }
+}
+
+private fun DrawScope.desenharEqualizador(nivel: Float, tempo: Float, size: Size) {
+    val barras = 7
+    val espaco = size.width / (barras * 1.7f)
+    val larguraBarra = espaco * 0.55f
+    for (i in 0 until barras) {
+        val fase = tempo + i * 0.85f
+        val fator = 0.18f + 0.16f * nivel + 0.66f * nivel * abs(sin(fase))
+        val altura = (size.height * fator).coerceAtLeast(3f)
+        val x = i * espaco + espaco / 2f
+        val cor = if (i % 2 == 0) Color(0xFF35E0FF) else Color(0xFF4ADE9C)
+        drawRoundRect(
+            color = cor.copy(alpha = 0.85f),
+            topLeft = Offset(x, (size.height - altura) / 2f),
+            size = Size(larguraBarra, altura),
+            cornerRadius = CornerRadius(larguraBarra / 2f, larguraBarra / 2f)
+        )
     }
 }

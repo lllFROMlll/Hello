@@ -35,7 +35,23 @@ Fluxos preservados: gaveta lateral (histórico/nova conversa/fixar/excluir/confi
 
 ---
 
+## Tela 2 — Comando de voz imersivo (`ImersaoVoz.kt`, restilizada do vídeo)
+
+Referência visual: `RecorteVoiceBlér.mp4` (frames analisados; margens do recorte não fazem parte do design).
+
+| # | Elemento | Aparência | Função | Estado |
+|---|----------|-----------|--------|--------|
+| 1 | Orbe luminosa | Esfera branco→ciano→azul com manchas magenta, pulso lento (1400ms) | Toque = parar gravação → `pararComandoVoz` (MainActivity.kt:517) | LIGADO |
+| 2 | Anéis concêntricos | 2 tracejados verde-água + 1 rosa/roxo, expandem/contragem com a intensidade da voz | Feedback visual do microfone (`intensidadeVoz`) | LIGADO |
+| 3 | Cartão de legenda | Pílula escura borda teal; transcrição entre aspas, trecho reconhecido em ciano, fade 650ms | Mostrar `textoParcialVoz` ao vivo (nativo flui; IA mostra "escutando...") | LIGADO |
+| 4 | Equalizador | 7 barras ciano/verde reativas ao áudio | Feedback de captação (`intensidadeVoz`) | LIGADO |
+| 5 | Seta ‹ no topo | Botão circular roxo sobre o véu do topo | Sair da imersão e voltar ao chat principal → `cancelarComandoVoz` (MainActivity.kt:300) | LIGADO |
+| 6 | Entrada/saída | Slide + fade suaves (550/480ms) | Transição sem corte brusco | LIGADO |
+
+Nesta tela a seta ‹ NÃO abre a gaveta — só volta ao chat. Fora da imersão, ‹ abre a gaveta (comportamento contextual confirmado pelo dono).
+
+---
+
 ## Telas pendentes (aguardando imagens do dono)
 - Configurações
-- Comando de voz imersivo
 - Menu "..." (função a definir)
