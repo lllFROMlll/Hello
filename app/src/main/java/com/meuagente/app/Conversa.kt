@@ -12,3 +12,13 @@ data class ConversaEntity(
     val dataCriacao: Long,
     val fixada: Boolean = false
 )
+
+// Cartão de conversa para a gaveta lateral, com prévia da última mensagem.
+data class CartaoConversa(
+    val id: Int,
+    val titulo: String,
+    val fixada: Boolean,
+    val dataCriacao: Long,
+    val ultimaMensagem: String?,
+    val ultimaAtividade: Long?
+)

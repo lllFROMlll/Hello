@@ -17,6 +17,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -49,6 +50,11 @@ import com.meuagente.app.ui.BlerFundoBase
 import com.meuagente.app.ui.BlerFundoTopo
 import com.meuagente.app.ui.BlerTextoHora
 import com.meuagente.app.ui.BolhaMensagem
+import com.meuagente.app.ui.CartaoConversaGaveta
+import com.meuagente.app.ui.CartaoNovaConversaBler
+import com.meuagente.app.ui.DivisoriaNeonBler
+import com.meuagente.app.ui.RodapeConfiguracoesBler
+import com.meuagente.app.ui.TituloSecaoBler
 import com.meuagente.app.ui.TopoChatBler
 import java.io.IOException
 import java.text.SimpleDateFormat
@@ -97,6 +103,19 @@ private val REGEX_APAGAR = Regex("""\[APAGAR:\s*(.+?)\]""")
 
 private fun formatarHora(dataHora: Long): String =
     SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(dataHora))
+
+private fun formatarHoraRelativa(dataHora: Long): String {
+    val agora = java.time.LocalDate.now()
+    val dia = java.time.Instant.ofEpochMilli(dataHora).atZone(java.time.ZoneId.systemDefault()).toLocalDate()
+    return when {
+        dia == agora -> SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(dataHora))
+        dia == agora.minusDays(1) -> "Ontem"
+        dia.isAfter(agora.minusDays(7)) ->
+            dia.dayOfWeek.getDisplayName(java.time.format.TextStyle.FULL, Locale("pt", "BR"))
+                .replaceFirstChar { it.uppercase(Locale("pt", "BR")) }
+        else -> SimpleDateFormat("dd/MM/yy", Locale.getDefault()).format(Date(dataHora))
+    }
+}
 
 private fun montarInstrucaoDeMemoria(lembretes: List<LembreteEntity>): String {
     val listaTexto = if (lembretes.isEmpty()) {
@@ -311,6 +330,7 @@ fun TelaDeChat(aoAbrirConfig: () -> Unit) {
 
     // Estado das conversas (abas)
     var conversas by remember { mutableStateOf(listOf<ConversaEntity>()) }
+    var cartoesConversa by remember { mutableStateOf(listOf<CartaoConversa>()) }
     var conversaAtualId by remember { mutableStateOf(0) }
 
     // Estado da confirmação de exclusão de conversa (via "x" da aba)
@@ -335,6 +355,7 @@ fun TelaDeChat(aoAbrirConfig: () -> Unit) {
     fun carregarConversas() {
         escopo.launch {
             conversas = db.agenteDao().listarConversasFixadasPrimeiro()
+            cartoesConversa = db.agenteDao().listarCartoesDeConversa()
         }
     }
 
@@ -624,99 +645,75 @@ fun TelaDeChat(aoAbrirConfig: () -> Unit) {
     ModalNavigationDrawer(
         drawerState = estadoGaveta,
         drawerContent = {
-            ModalDrawerSheet {
-                Spacer(Modifier.height(16.dp))
-                Text(text = "Blér", modifier = Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.titleLarge)
-                Spacer(Modifier.height(8.dp))
+            ModalDrawerSheet(
+                drawerContainerColor = Color(0xFF04060B),
+                drawerShape = RoundedCornerShape(topEnd = 24.dp, bottomEnd = 24.dp),
+                windowInsets = WindowInsets(0)
+            ) {
+                Column(modifier = Modifier.fillMaxSize()) {
+                    // Espaço liso reservado para o logo (entrará no futuro)
+                    Spacer(modifier = Modifier.height(96.dp))
 
-                Canvas(modifier = Modifier.fillMaxWidth().height(2.dp)) {
-                    drawLine(
-                        brush = Brush.horizontalGradient(listOf(NeonAzul, NeonLilas, NeonRosa)),
-                        start = Offset(0f, 0f),
-                        end = Offset(size.width, 0f),
-                        strokeWidth = 2f
-                    )
-                }
-                Spacer(Modifier.height(8.dp))
+                    DivisoriaNeonBler()
 
-                NavigationDrawerItem(
-                    label = { Text("Nova conversa") },
-                    selected = false,
-                    onClick = { criarNovaConversa() },
-                    icon = {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_plus),
-                            contentDescription = null,
-                            tint = NeonLilas,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    },
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
-                )
-                HorizontalDivider()
-
-                Text(
-                    text = "Conversas",
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                    style = MaterialTheme.typography.labelLarge
-                )
-                conversas.forEach { conversa ->
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp)
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 18.dp)
                     ) {
-                        NavigationDrawerItem(
-                            label = { Text(conversa.titulo) },
-                            selected = conversa.id == conversaAtualId,
-                            onClick = { abrirConversa(conversa.id) },
-                            modifier = Modifier.weight(1f)
-                        )
-                        IconButton(
-                            onClick = { fixarConversa(conversa.id, !conversa.fixada) },
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(
-                                painter = painterResource(R.drawable.ic_pin),
-                                contentDescription = "Fixar",
-                                tint = if (conversa.fixada) NeonRosa else NeonLilas,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                        IconButton(
-                            onClick = { excluirConversa(conversa.id) },
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(
-                                painter = painterResource(R.drawable.ic_trash),
-                                contentDescription = "Excluir conversa",
-                                tint = NeonRosa,
-                                modifier = Modifier.size(18.dp)
-                            )
+                        CartaoNovaConversaBler(aoClicar = { criarNovaConversa() })
+
+                        if (cartoesConversa.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(22.dp))
+                            TituloSecaoBler()
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                cartoesConversa.forEach { cartao ->
+                                    val subtitulo = if (cartao.id == conversaAtualId) {
+                                        "Ativa agora" + (cartao.ultimaAtividade?.let { " • ${formatarHoraRelativa(it)}" } ?: "")
+                                    } else {
+                                        cartao.ultimaMensagem?.take(60) ?: "Sem mensagens ainda"
+                                    }
+                                    CartaoConversaGaveta(
+                                        titulo = cartao.titulo,
+                                        subtitulo = subtitulo,
+                                        ativo = cartao.id == conversaAtualId,
+                                        fixada = cartao.fixada,
+                                        aoAbrir = { abrirConversa(cartao.id) },
+                                        aoFixar = { fixarConversa(cartao.id, !cartao.fixada) },
+                                        aoExcluir = { confirmarExclusaoId = cartao.id }
+                                    )
+                                }
+                            }
                         }
                     }
+
+                    DivisoriaNeonBler()
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(color = Color(0xF2080C16))
+                            .padding(horizontal = 18.dp, vertical = 12.dp)
+                    ) {
+                        RodapeConfiguracoesBler(aoAbrir = {
+                            escopo.launch { estadoGaveta.close() }
+                            aoAbrirConfig()
+                        })
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Box(
+                            modifier = Modifier
+                                .size(width = 120.dp, height = 4.dp)
+                                .background(
+                                    color = Color(0x59334155),
+                                    shape = RoundedCornerShape(50)
+                                )
+                                .align(Alignment.CenterHorizontally)
+                        )
+                    }
                 }
-
-                Spacer(Modifier.weight(1f))
-
-                Canvas(modifier = Modifier.fillMaxWidth().height(2.dp)) {
-                    drawLine(
-                        brush = Brush.horizontalGradient(listOf(NeonRosa, NeonLilas, NeonAzul)),
-                        start = Offset(0f, 0f),
-                        end = Offset(size.width, 0f),
-                        strokeWidth = 2f
-                    )
-                }
-                Spacer(Modifier.height(8.dp))
-
-                NavigationDrawerItem(
-                    label = { Text("Configurações") },
-                    selected = false,
-                    onClick = {
-                        escopo.launch { estadoGaveta.close() }
-                        aoAbrirConfig()
-                    },
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
-                )
             }
         }
     ) {

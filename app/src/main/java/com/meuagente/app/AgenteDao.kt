@@ -32,6 +32,17 @@ interface AgenteDao {
     @Query("SELECT * FROM conversas ORDER BY fixada DESC, dataCriacao DESC")
     suspend fun listarConversasFixadasPrimeiro(): List<ConversaEntity>
 
+    @Query(
+        """
+        SELECT c.id AS id, c.titulo AS titulo, c.fixada AS fixada, c.dataCriacao AS dataCriacao,
+            (SELECT m.texto FROM mensagens m WHERE m.conversaId = c.id ORDER BY m.dataHora DESC LIMIT 1) AS ultimaMensagem,
+            (SELECT MAX(m.dataHora) FROM mensagens m WHERE m.conversaId = c.id) AS ultimaAtividade
+        FROM conversas c
+        ORDER BY c.fixada DESC, c.dataCriacao DESC
+        """
+    )
+    suspend fun listarCartoesDeConversa(): List<CartaoConversa>
+
     @Query("DELETE FROM mensagens WHERE conversaId = :conversaId")
     suspend fun apagarMensagensDaConversa(conversaId: Int)
 

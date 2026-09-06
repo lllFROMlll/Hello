@@ -52,6 +52,20 @@ Nesta tela a seta ‹ NÃO abre a gaveta — só volta ao chat. Fora da imersão
 
 ---
 
+## Tela 3 — Gaveta "Menu e Conversas" (drawer, restilizada de configuraçõesBlér)
+
+| # | Elemento | Função | Implementação | Estado |
+|---|----------|--------|---------------|--------|
+| 1 | Espaço do topo | Reservado para o logo (futuro) — liso | Spacer | MOCK |
+| 2 | Divisórias neon | Decorativas (magenta→ciano com glow) | `DivisoriaNeonBler` | LIGADO (visual) |
+| 3 | Cartão "Nova conversa" | Criar conversa e fechar gaveta | `criarNovaConversa` (MainActivity.kt:319) | LIGADO |
+| 4 | Seção "CONVERSAS / Recentes" | Só aparece quando há conversas | `cartoesConversa.isNotEmpty()` | LIGADO |
+| 5 | Cartão de conversa (ativo) | Rim ciano + "Ativa agora • HH:mm" | `abrirConversa` (MainActivity.kt:335) | LIGADO |
+| 6 | Cartão de conversa (inativo) | Prévia da última mensagem + hora relativa ("Ontem", "Segunda"...) | query `listarCartoesDeConversa` (AgenteDao) | LIGADO |
+| 7 | Estrela (ic_pin) | Fixar/desafixar (máx. 5) | `fixarConversa` (MainActivity.kt:362) | LIGADO |
+| 8 | Lixeira (ic_trash) | Excluir com confirmação | `excluirConversa` (MainActivity.kt:387) + AlertDialog | LIGADO |
+| 9 | Rodapé "Configurações / Preferências e conta" | Abrir configurações | `aoAbrirConfig` → `TelaConfiguracoes` | LIGADO |
+
 ## Telas pendentes (aguardando imagens do dono)
-- Configurações
+- Logo da gaveta (PNG sem fundo, entrará no futuro)
 - Menu "..." (função a definir)
