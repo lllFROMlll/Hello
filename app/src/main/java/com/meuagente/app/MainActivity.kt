@@ -105,6 +105,13 @@ private val REGEX_BUSCAR = Regex("""\[BUSCAR:\s*(.+?)\]""")
 private fun formatarHora(dataHora: Long): String =
     SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(dataHora))
 
+private fun respostaDegenerada(texto: String): Boolean {
+    val frases = texto.split(".", "!", "?", "\n")
+        .map { it.trim() }
+        .filter { it.length > 15 }
+    return frases.groupingBy { it }.eachCount().values.any { it >= 3 }
+}
+
 private fun formatarHoraRelativa(dataHora: Long): String {
     val agora = java.time.LocalDate.now()
     val dia = java.time.Instant.ofEpochMilli(dataHora).atZone(java.time.ZoneId.systemDefault()).toLocalDate()
@@ -147,6 +154,8 @@ private fun montarInstrucaoDeMemoria(lembretes: List<LembreteEntity>): String {
         3. Quando o usuário perguntar o que está pendente, responda de forma BREVE e resumida, sem repetir detalhes extras de tempo que possam não fazer mais sentido depois.
         4. Nunca escreva as marcações [GUARDAR: ] ou [APAGAR: ] de forma diferente da exata, nem explique elas ao usuário.
         5. Se a pergunta depender de informação atual ou da internet (notícias, esportes, clima, preços, cotações, fatos recentes), adicione no FINAL da resposta, em linha separada, exatamente: [BUSCAR: termos de busca curtos e eficazes]. Você receberá os resultados reais da internet e deverá responder com base neles, citando de onde veio a informação quando fizer sentido. Se a mensagem que você recebe já contém "RESULTADOS DA BUSCA NA INTERNET", responda normalmente SEM pedir nova busca.
+        6. Responda APENAS à ÚLTIMA mensagem do usuário, de forma direta, em um único parágrafo coerente. NUNCA repita a mesma frase ou trecho dentro da resposta.
+        7. Para fatos atuais (jogos, placares, notícias, datas de eventos recentes), use SOMENTE os "RESULTADOS DA BUSCA NA INTERNET" que você receber. Se os resultados não trouxerem a informação clara, diga honestamente que não encontrou — NUNCA invente placar, data, nome ou evento.
     """.trimIndent()
 }
 
@@ -492,6 +501,17 @@ fun TelaDeChat(aoAbrirConfig: () -> Unit) {
                 val respostaBruta = perguntarComProvedor(historico, provedor, modelo, chave, instrucao)
                 var respostaLimpa = processarAcoesDeMemoria(respostaBruta, db)
 
+                // Proteção contra loop de repetição do modelo (degeneração)
+                if (respostaDegenerada(respostaLimpa)) {
+                    val segundaTentativa = processarAcoesDeMemoria(
+                        perguntarComProvedor(historico, provedor, modelo, chave, instrucao),
+                        db
+                    )
+                    if (!respostaDegenerada(segundaTentativa)) {
+                        respostaLimpa = segundaTentativa
+                    }
+                }
+
                 // ── Busca real na internet quando a IA pede [BUSCAR: ...] ──
                 if (REGEX_BUSCAR.containsMatchIn(respostaLimpa)) {
                     val termos = REGEX_BUSCAR.findAll(respostaLimpa)
@@ -507,7 +527,8 @@ fun TelaDeChat(aoAbrirConfig: () -> Unit) {
                     if (resultadoWeb.isNotBlank()) {
                         val contextoWeb = "RESULTADOS DA BUSCA NA INTERNET para \"$termos\":\n\n" +
                             resultadoWeb +
-                            "\n\nResponda à pergunta do usuário usando esses resultados reais."
+                            "\n\nResponda à pergunta do usuário usando esses resultados reais. " +
+                            "Se os resultados não contiverem a informação pedida, diga que não encontrou — nunca invente."
                         val mensagemSistema = MensagemEntity(
                             conversaId = idConversa,
                             autor = "sistema",
@@ -518,7 +539,15 @@ fun TelaDeChat(aoAbrirConfig: () -> Unit) {
                             historico + mensagemSistema,
                             provedor, modelo, chave, instrucao
                         )
-                        respostaLimpa = processarAcoesDeMemoria(respostaFinalBruta, db)
+                        val respostaFinalValida = !respostaFinalBruta.isBlank() &&
+                            !respostaFinalBruta.startsWith("Erro")
+                        respostaLimpa = if (respostaFinalValida) {
+                            processarAcoesDeMemoria(respostaFinalBruta, db)
+                        } else {
+                            // IA falhou na 2ª chamada: salva a 1ª resposta (sem marcações) + aviso
+                            respostaLimpa.replace(REGEX_BUSCAR, "").trim() +
+                                "\n\n(A busca funcionou, mas houve falha ao gerar a resposta final. Tente de novo.)"
+                        }
                     } else {
                         respostaLimpa = respostaLimpa.replace(REGEX_BUSCAR, "").trim() +
                             "\n\n(Não consegui pesquisar na internet agora.)"
