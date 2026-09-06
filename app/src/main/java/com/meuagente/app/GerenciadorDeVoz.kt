@@ -34,7 +34,9 @@ object GerenciadorDeVoz {
         return when (ControladorModoVoz.atual(contexto)) {
             ModoVoz.NATIVO -> false
             ModoVoz.IA_AUDIO -> true
-            ModoVoz.AUTOMATICO -> MapaMultimodal.ehMultimodal(contexto, modeloAtivo)
+            // Automático: nativo primeiro, para o texto aparecer AO VIVO
+            // enquanto o usuário fala (o caminho IA não entrega parciais).
+            ModoVoz.AUTOMATICO -> false
         }
     }
 

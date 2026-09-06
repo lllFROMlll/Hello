@@ -46,8 +46,8 @@ object ControladorModoVoz {
     // Descrição em linguagem simples (para Configurações).
     fun descricao(modo: ModoVoz): String = when (modo) {
         ModoVoz.AUTOMATICO ->
-            "O app escolhe: envia o áudio à IA se o modelo aceitar; se não, " +
-                "usa o microfone nativo do aparelho automaticamente."
+            "O app escolhe: usa o microfone nativo do aparelho, com o texto " +
+                "aparecendo ao vivo enquanto você fala."
         ModoVoz.IA_AUDIO ->
             "Envia o áudio ao modelo de IA selecionado nas configurações. " +
                 "Requer um modelo que aceite áudio (multimodal)."

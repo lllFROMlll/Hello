@@ -293,7 +293,6 @@ fun TelaDeChat(aoAbrirConfig: () -> Unit) {
     var emImersao by remember { mutableStateOf(false) }
     var intensidadeVoz by remember { mutableStateOf(0f) }
     var textoParcialVoz by remember { mutableStateOf("") }
-    var textoTranscrito by remember { mutableStateOf("") }
     var caminhoVozAtivo by remember { mutableStateOf("Nativo") }
 
     // Referências aos recursos de voz ativos (para poder parar depois)
@@ -480,18 +479,16 @@ fun TelaDeChat(aoAbrirConfig: () -> Unit) {
         }
     }
 
-    // ── Texto final pronto → fecha a imersão e mostra para revisar ──
+    // ── Texto final pronto → fecha a imersão e leva ao campo principal ──
     fun textoPronto(texto: String) {
         emImersao = false
         intensidadeVoz = 0f
-        if (texto.isBlank() || texto.equals("Transcrevendo...", ignoreCase = true)) {
-            estadoVoz = EstadoVoz.INATIVO
-        } else {
-            textoTranscrito = texto
-            estadoVoz = EstadoVoz.PRONTO
-        }
         gravadorAudioRef = null
         transcricaoNativaRef = null
+        estadoVoz = EstadoVoz.INATIVO
+        if (!texto.isBlank() && !texto.equals("Transcrevendo...", ignoreCase = true)) {
+            textoDigitado = if (textoDigitado.isBlank()) texto else textoDigitado + " " + texto
+        }
     }
 
     // ── Erro de voz → sai da imersão e registra uma mensagem do agente ──
@@ -545,7 +542,6 @@ fun TelaDeChat(aoAbrirConfig: () -> Unit) {
         FxSons.apresentar(contexto)
 
         textoParcialVoz = ""
-        textoTranscrito = ""
         intensidadeVoz = 0f
         emImersao = true
         estadoVoz = EstadoVoz.GRAVANDO
@@ -575,18 +571,6 @@ fun TelaDeChat(aoAbrirConfig: () -> Unit) {
     // ── Alternar o modo de voz (Auto → IA → Nativo) ──
     fun alternarModoVoz() {
         modoVozAtual = ControladorModoVoz.alternar(contexto)
-    }
-
-    // ── Enviar o texto transcrito como mensagem normal de chat ──
-    fun enviarTranscricao() {
-        val texto = textoTranscrito.trim()
-        if (texto.isBlank()) {
-            estadoVoz = EstadoVoz.INATIVO
-            return
-        }
-        textoTranscrito = ""
-        estadoVoz = EstadoVoz.INATIVO
-        enviarMensagem(texto, conversaAtualId)
     }
 
     // ── Permissão de microfone ──
@@ -774,22 +758,7 @@ fun TelaDeChat(aoAbrirConfig: () -> Unit) {
                 }
             }
 
-            // ── Rodapé de voz: apenas revisão de transcrição pronta ──
-            if (estadoVoz == EstadoVoz.PRONTO) {
-                RodapeDeVoz(
-                    estado = estadoVoz,
-                    modoAtual = modoVozAtual,
-                    textoTranscrito = textoTranscrito,
-                    aoAlternarModo = { alternarModoVoz() },
-                    aoIniciar = {},
-                    aoEnviar = { enviarTranscricao() },
-                    aoEditarTexto = { textoTranscrito = it },
-                    modifier = Modifier.padding(horizontal = 14.dp)
-                )
-                Spacer(Modifier.height(8.dp))
-            }
-
-            // ── Linha de digitação (texto) com comando de voz ──
+            // ── Rodapé: campo de diálogo do novo design (único) ──
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier

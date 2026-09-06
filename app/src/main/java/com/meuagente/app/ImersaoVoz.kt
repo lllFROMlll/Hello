@@ -1,11 +1,15 @@
 package com.meuagente.app
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -39,6 +43,7 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.SpanStyle
@@ -51,11 +56,11 @@ import androidx.compose.ui.unit.sp
 import com.meuagente.app.ui.BotaoCircularNeon
 import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.cos
 import kotlin.math.sin
 
 private val FundoImersao = Color(0xFF040610)
 private val TealAnel = Color(0xFF38E8C8)
-private val RosaAnel = Color(0xFFC86BFF)
 
 /**
  * Tela de IMERSÃO do comando de voz, fiel ao vídeo de referência:
@@ -93,18 +98,6 @@ fun ImersaoVoz(
 
     val nivel = intensidade.coerceIn(0f, 1f)
     val interacaoOrbe = remember { MutableInteractionSource() }
-
-    // Aparecimento suave da legenda a cada novo texto reconhecido
-    var alphaLegendaAlvo by remember { mutableFloatStateOf(0f) }
-    val alphaLegenda by animateFloatAsState(
-        targetValue = alphaLegendaAlvo,
-        animationSpec = tween(650),
-        label = "alpha_legenda"
-    )
-    LaunchedEffect(textoParcial) {
-        alphaLegendaAlvo = 0f
-        alphaLegendaAlvo = 1f
-    }
 
     Surface(color = Color.Transparent) {
         Box(
@@ -175,26 +168,36 @@ fun ImersaoVoz(
                         center = centro
                     )
 
-                    // Anéis externos tracejados (verde-água) — expandem com a voz
-                    drawCircle(
-                        color = TealAnel.copy(alpha = 0.28f + nivel * 0.25f),
-                        radius = raioBase * 1.85f + nivel * 26f,
-                        center = centro,
-                        style = Stroke(width = 2.5f, pathEffect = traco)
-                    )
-                    drawCircle(
-                        color = TealAnel.copy(alpha = 0.55f),
-                        radius = raioBase * 1.55f - nivel * 16f,
-                        center = centro,
-                        style = Stroke(width = 2f)
-                    )
+                    // Pulsos reativos: nascem grossos junto ao orbe (cor da
+                    // esfera) e se dissipam ao expandir com a voz.
+                    for (i in 0 until 4) {
+                        val p = ((tempo * 0.4f) + i / 4f) % 1f
+                        val raioPulso = raioBase * (1.05f + p * 1.25f * (0.55f + 0.45f * nivel))
+                        val largura = 5.5f * (1f - p) + 0.8f
+                        val alpha = (1f - p) * (0.30f + 0.65f * nivel)
+                        drawCircle(
+                            brush = Brush.sweepGradient(
+                                colors = listOf(
+                                    Color(0xFF54CDF8),
+                                    Color(0xFFA5F3FF),
+                                    Color(0xFF2E6FD8),
+                                    Color(0xFF54CDF8)
+                                ),
+                                center = centro
+                            ),
+                            radius = raioPulso,
+                            center = centro,
+                            alpha = alpha,
+                            style = Stroke(width = largura, pathEffect = traco)
+                        )
+                    }
 
-                    // Anel rosa/roxo tracejado — contrafase com a voz
+                    // Anel-moldura externo fixo, sutil
                     drawCircle(
-                        color = RosaAnel.copy(alpha = 0.45f + nivel * 0.3f),
-                        radius = raioBase * 1.32f + (1f - nivel) * 14f,
+                        color = TealAnel.copy(alpha = 0.30f),
+                        radius = raioBase * 1.85f,
                         center = centro,
-                        style = Stroke(width = 3f, pathEffect = traco)
+                        style = Stroke(width = 2f, pathEffect = traco)
                     )
 
                     // Esfera central
@@ -214,26 +217,50 @@ fun ImersaoVoz(
                         center = centro
                     )
 
-                    // Manchas magenta internas
-                    val mancha1 = Offset(centro.x + raioBase * 0.42f, centro.y + raioBase * 0.38f)
+                    // Camada de cores rotativa: ciano/magenta/azul se fundindo
+                    rotate(degrees = tempo * 40f, pivot = centro) {
+                        drawCircle(
+                            brush = Brush.sweepGradient(
+                                colors = listOf(
+                                    Color(0xFF54CDF8),
+                                    Color(0xFFE34FD0),
+                                    Color(0xFF2E6FD8),
+                                    Color(0xFF54CDF8)
+                                ),
+                                center = centro
+                            ),
+                            radius = raioBase,
+                            center = centro,
+                            alpha = 0.30f
+                        )
+                    }
+
+                    // Manchas magenta internas em deriva lenta
+                    val deriva1 = Offset(
+                        centro.x + raioBase * (0.42f + 0.10f * sin(tempo * 0.8f)),
+                        centro.y + raioBase * (0.38f + 0.10f * cos(tempo * 0.6f))
+                    )
                     drawCircle(
                         brush = Brush.radialGradient(
                             colors = listOf(Color(0x99E34FD0), Color.Transparent),
-                            center = mancha1,
+                            center = deriva1,
                             radius = raioBase * 0.55f
                         ),
                         radius = raioBase * 0.55f,
-                        center = mancha1
+                        center = deriva1
                     )
-                    val mancha2 = Offset(centro.x - raioBase * 0.5f, centro.y - raioBase * 0.1f)
+                    val deriva2 = Offset(
+                        centro.x - raioBase * (0.5f + 0.08f * cos(tempo * 0.5f)),
+                        centro.y - raioBase * (0.1f + 0.08f * sin(tempo * 0.7f))
+                    )
                     drawCircle(
                         brush = Brush.radialGradient(
                             colors = listOf(Color(0x66FF5EDB), Color.Transparent),
-                            center = mancha2,
+                            center = deriva2,
                             radius = raioBase * 0.4f
                         ),
                         radius = raioBase * 0.4f,
-                        center = mancha2
+                        center = deriva2
                     )
 
                     // Contorno suave da esfera
@@ -261,7 +288,6 @@ fun ImersaoVoz(
                 Box(
                     modifier = Modifier
                         .widthIn(max = 300.dp)
-                        .graphicsLayer { alpha = alphaLegenda }
                         .background(
                             color = Color(0xE6101426),
                             shape = RoundedCornerShape(18.dp)
@@ -269,13 +295,22 @@ fun ImersaoVoz(
                         .border(1.dp, Color(0x3338E8C8), RoundedCornerShape(18.dp))
                         .padding(horizontal = 18.dp, vertical = 14.dp)
                 ) {
-                    Text(
-                        text = legenda,
-                        color = Color.White,
-                        fontSize = 16.sp,
-                        lineHeight = 22.sp,
-                        textAlign = TextAlign.Center
-                    )
+                    AnimatedContent(
+                        targetState = legenda,
+                        transitionSpec = {
+                            (slideInVertically(animationSpec = tween(420)) { it / 3 } + fadeIn(animationSpec = tween(420)))
+                                .togetherWith(fadeOut(animationSpec = tween(260)))
+                        },
+                        label = "legenda_viva"
+                    ) { textoAnimado ->
+                        Text(
+                            text = textoAnimado,
+                            color = Color.White,
+                            fontSize = 16.sp,
+                            lineHeight = 22.sp,
+                            textAlign = TextAlign.Center
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.weight(1f))
