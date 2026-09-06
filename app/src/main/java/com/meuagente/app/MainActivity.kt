@@ -100,6 +100,7 @@ fun AppPrincipal() {
 
 private val REGEX_GUARDAR = Regex("""\[GUARDAR:\s*(.+?)\]""")
 private val REGEX_APAGAR = Regex("""\[APAGAR:\s*(.+?)\]""")
+private val REGEX_BUSCAR = Regex("""\[BUSCAR:\s*(.+?)\]""")
 
 private fun formatarHora(dataHora: Long): String =
     SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(dataHora))
@@ -145,6 +146,7 @@ private fun montarInstrucaoDeMemoria(lembretes: List<LembreteEntity>): String {
         2. Se o usuário disser que algo já foi feito, resolvido, entregue, comprado, cancelado, ou que não precisa mais lembrar daquilo, você DEVE adicionar no FINAL da resposta, em linha separada: [APAGAR: texto que identifique a memória antiga]. Isso é obrigatório sempre que o usuário confirmar que algo foi concluído.
         3. Quando o usuário perguntar o que está pendente, responda de forma BREVE e resumida, sem repetir detalhes extras de tempo que possam não fazer mais sentido depois.
         4. Nunca escreva as marcações [GUARDAR: ] ou [APAGAR: ] de forma diferente da exata, nem explique elas ao usuário.
+        5. Se a pergunta depender de informação atual ou da internet (notícias, esportes, clima, preços, cotações, fatos recentes), adicione no FINAL da resposta, em linha separada, exatamente: [BUSCAR: termos de busca curtos e eficazes]. Você receberá os resultados reais da internet e deverá responder com base neles, citando de onde veio a informação quando fizer sentido. Se a mensagem que você recebe já contém "RESULTADOS DA BUSCA NA INTERNET", responda normalmente SEM pedir nova busca.
     """.trimIndent()
 }
 
@@ -315,6 +317,7 @@ fun TelaDeChat(aoAbrirConfig: () -> Unit) {
     var mensagens by remember { mutableStateOf(listOf<MensagemEntity>()) }
     var textoDigitado by remember { mutableStateOf("") }
     var carregando by remember { mutableStateOf(false) }
+    var buscandoWeb by remember { mutableStateOf(false) }
 
     // ── Estado do comando de voz imersivo ──
     var estadoVoz by remember { mutableStateOf(EstadoVoz.INATIVO) }
@@ -487,7 +490,41 @@ fun TelaDeChat(aoAbrirConfig: () -> Unit) {
                 val instrucao = montarInstrucaoDeMemoria(lembretesAtuais)
                 val historico = db.agenteDao().listarMensagensDaConversa(idConversa)
                 val respostaBruta = perguntarComProvedor(historico, provedor, modelo, chave, instrucao)
-                val respostaLimpa = processarAcoesDeMemoria(respostaBruta, db)
+                var respostaLimpa = processarAcoesDeMemoria(respostaBruta, db)
+
+                // ── Busca real na internet quando a IA pede [BUSCAR: ...] ──
+                if (REGEX_BUSCAR.containsMatchIn(respostaLimpa)) {
+                    val termos = REGEX_BUSCAR.findAll(respostaLimpa)
+                        .joinToString("; ") { it.groupValues[1].trim() }
+                        .take(300)
+
+                    buscandoWeb = true
+                    val resultadoWeb = withContext(Dispatchers.IO) {
+                        runCatching { PesquisadorWeb.buscar(termos) }.getOrElse { "" }
+                    }
+                    buscandoWeb = false
+
+                    if (resultadoWeb.isNotBlank()) {
+                        val contextoWeb = "RESULTADOS DA BUSCA NA INTERNET para \"$termos\":\n\n" +
+                            resultadoWeb +
+                            "\n\nResponda à pergunta do usuário usando esses resultados reais."
+                        val mensagemSistema = MensagemEntity(
+                            conversaId = idConversa,
+                            autor = "sistema",
+                            texto = contextoWeb,
+                            dataHora = System.currentTimeMillis()
+                        )
+                        val respostaFinalBruta = perguntarComProvedor(
+                            historico + mensagemSistema,
+                            provedor, modelo, chave, instrucao
+                        )
+                        respostaLimpa = processarAcoesDeMemoria(respostaFinalBruta, db)
+                    } else {
+                        respostaLimpa = respostaLimpa.replace(REGEX_BUSCAR, "").trim() +
+                            "\n\n(Não consegui pesquisar na internet agora.)"
+                    }
+                }
+
                 carregando = false
                 db.agenteDao().salvarMensagem(
                     MensagemEntity(conversaId = idConversa, autor = "agente", texto = respostaLimpa, dataHora = System.currentTimeMillis())
@@ -747,6 +784,16 @@ fun TelaDeChat(aoAbrirConfig: () -> Unit) {
                     item {
                         Text(
                             text = "agente está digitando...",
+                            color = BlerTextoHora,
+                            fontSize = 14.sp,
+                            modifier = Modifier.padding(horizontal = 12.dp)
+                        )
+                    }
+                }
+                if (buscandoWeb) {
+                    item {
+                        Text(
+                            text = "🌐 Buscando na internet...",
                             color = BlerTextoHora,
                             fontSize = 14.sp,
                             modifier = Modifier.padding(horizontal = 12.dp)

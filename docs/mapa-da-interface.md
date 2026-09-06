@@ -29,7 +29,8 @@ Estratégia atual: a UI da tela de chat é a **própria `TelaDeChat` em `MainAct
 | 7 | Campo de texto | `BarraDeEntrada` (pílula borda roxa) | Placeholder "Digite uma mensagem..." | Digitar mensagem | `textoDigitado` (MainActivity.kt:273) | LIGADO |
 | 8 | Botão microfone | `BotaoCircularNeon` borda roxa, dentro da pílula | Círculo com `ic_mic` | Comando de voz imersivo | permissão → `iniciarComandoVoz()` (MainActivity.kt:524, 826–833) | LIGADO |
 | 9 | Botão enviar | círculo gradiente ciano→verde, avião `ic_send` | Fora da pílula, ao lado | Enviar mensagem | `enviarMensagem(texto, conversaAtualId)` (MainActivity.kt:422) | LIGADO |
-| 10 | Revisão de transcrição | `RodapeDeVoz` (só estado PRONTO) | Campo de texto editável + botão enviar | Revisar/enviar transcrição de voz | `enviarTranscricao()` (MainActivity.kt:567) | LIGADO |
+| 10 | Revisão de transcrição | Transcrição pronta vai direto ao campo de diálogo (sem campo extra) | `textoPronto` → `textoDigitado` (MainActivity.kt) | LIGADO |
+| 11 | Pesquisa na internet | IA pede `[BUSCAR: termos]`; app pesquisa em cascata (DuckDuckGo → Bing → Mojeek → SearXNG → Wikipedia), abre as páginas e reinjeta os resultados na conversa; indicador "🌐 Buscando na internet..." | `PesquisadorWeb.buscar` (PesquisadorWeb.kt) + fluxo em `enviarMensagem` (MainActivity.kt) | LIGADO |
 
 Fluxos preservados: gaveta lateral (histórico/nova conversa/fixar/excluir/configurações), diálogo de exclusão, overlay `ImersaoVoz` (GRAVANDO/TRANSCREVENDO), navegação para `TelaConfiguracoes`.
 
