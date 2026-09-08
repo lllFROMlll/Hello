@@ -9,7 +9,7 @@ import androidx.room.Update
 interface AgenteDao {
 
     @Insert
-    suspend fun salvarMensagem(mensagem: MensagemEntity)
+    suspend fun salvarMensagem(mensagem: MensagemEntity): Long
 
     @Query("SELECT * FROM mensagens ORDER BY dataHora ASC")
     suspend fun listarMensagens(): List<MensagemEntity>

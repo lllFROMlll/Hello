@@ -45,6 +45,9 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import com.meuagente.app.ia.CascataIA
+import com.meuagente.app.ia.FalhaIA
+import com.meuagente.app.ia.TodasFalharam
 import com.meuagente.app.ui.BarraDeEntrada
 import com.meuagente.app.ui.BlerFundoBase
 import com.meuagente.app.ui.BlerFundoTopo
@@ -104,6 +107,12 @@ private val REGEX_BUSCAR = Regex("""\[BUSCAR:\s*(.+?)\]""")
 
 private fun formatarHora(dataHora: Long): String =
     SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(dataHora))
+
+private fun nenhumProvedorConfigurado(contexto: android.content.Context): Boolean =
+    listOf("Gemini", "OpenRouter").none { provedor ->
+        Configuracoes.obterProvedorAtivoNaCascata(contexto, provedor, padrao = provedor == "Gemini") &&
+            Configuracoes.obterChaveDoProvedor(contexto, provedor).isNotBlank()
+    }
 
 private fun respostaDegenerada(texto: String): Boolean {
     val frases = texto.split(".", "!", "?", "\n")
@@ -188,133 +197,6 @@ private suspend fun processarAcoesDeMemoria(respostaIA: String, db: AgenteDataba
     return linhasParaMostrar.joinToString("\n").trim()
 }
 
-suspend fun perguntarComProvedor(
-    historico: List<MensagemEntity>,
-    provedor: String,
-    modelo: String,
-    chaveApi: String,
-    instrucaoSistema: String
-): String {
-    return when (provedor) {
-        "Gemini" -> chamarGemini(historico, chaveApi, modelo.ifBlank { "gemini-2.5-flash-lite" }, instrucaoSistema)
-        "OpenAI" -> chamarFormatoOpenAI(
-            historico, chaveApi, modelo.ifBlank { "gpt-4o-mini" },
-            "https://api.openai.com/v1/chat/completions", instrucaoSistema
-        )
-        "OpenRouter" -> chamarFormatoOpenAI(
-            historico, chaveApi, modelo,
-            "https://openrouter.ai/api/v1/chat/completions", instrucaoSistema
-        )
-        "Anthropic" -> "O suporte ao provedor Anthropic ainda não foi implementado. Escolha Gemini, OpenAI ou OpenRouter por enquanto."
-        else -> "Provedor \"$provedor\" ainda não é reconhecido pelo app."
-    }
-}
-
-private suspend fun chamarGemini(
-    historico: List<MensagemEntity>,
-    chaveApi: String,
-    modelo: String,
-    instrucaoSistema: String
-): String {
-    return withContext(Dispatchers.IO) {
-        try {
-            val client = OkHttpClient()
-            val url = "https://generativelanguage.googleapis.com/v1beta/models/$modelo:generateContent?key=$chaveApi"
-
-            val contents = JSONArray()
-            for (msg in historico) {
-                val papel = if (msg.autor == "você") "user" else "model"
-                val parte = JSONObject().put("text", msg.texto)
-                val partes = JSONArray().put(parte)
-                val item = JSONObject().put("role", papel).put("parts", partes)
-                contents.put(item)
-            }
-
-            val instrucao = JSONObject().put(
-                "parts", JSONArray().put(JSONObject().put("text", instrucaoSistema))
-            )
-
-            val corpoJson = JSONObject()
-                .put("contents", contents)
-                .put("systemInstruction", instrucao)
-
-            val mediaType = "application/json".toMediaType()
-            val corpo = corpoJson.toString().toRequestBody(mediaType)
-
-            val request = Request.Builder().url(url).post(corpo).build()
-            val resposta = client.newCall(request).execute()
-            val textoResposta = resposta.body?.string() ?: ""
-
-            if (!resposta.isSuccessful) {
-                return@withContext "Erro ${resposta.code}: $textoResposta"
-            }
-
-            val json = JSONObject(textoResposta)
-            val candidatos = json.getJSONArray("candidates")
-            val primeiro = candidatos.getJSONObject(0)
-            val conteudo = primeiro.getJSONObject("content")
-            val partesResposta = conteudo.getJSONArray("parts")
-            partesResposta.getJSONObject(0).getString("text")
-        } catch (e: IOException) {
-            "Não consegui me conectar à internet agora. Tenta de novo em instantes."
-        } catch (e: Exception) {
-            "Algo deu errado ao processar a resposta do Gemini: ${e.message}"
-        }
-    }
-}
-
-private suspend fun chamarFormatoOpenAI(
-    historico: List<MensagemEntity>,
-    chaveApi: String,
-    modelo: String,
-    url: String,
-    instrucaoSistema: String
-): String {
-    return withContext(Dispatchers.IO) {
-        try {
-            val client = OkHttpClient()
-
-            val mensagens = JSONArray()
-            mensagens.put(JSONObject().put("role", "system").put("content", instrucaoSistema))
-            for (msg in historico) {
-                val papel = if (msg.autor == "user") "user" else "assistant"
-                val item = JSONObject().put("role", papel).put("content", msg.texto)
-                mensagens.put(item)
-            }
-
-            val corpoJson = JSONObject()
-                .put("model", modelo)
-                .put("messages", mensagens)
-
-            val mediaType = "application/json".toMediaType()
-            val corpo = corpoJson.toString().toRequestBody(mediaType)
-
-            val request = Request.Builder()
-                .url(url)
-                .addHeader("Authorization", "Bearer $chaveApi")
-                .post(corpo)
-                .build()
-
-            val resposta = client.newCall(request).execute()
-            val textoResposta = resposta.body?.string() ?: ""
-
-            if (!resposta.isSuccessful) {
-                return@withContext "Erro ${resposta.code}: $textoResposta"
-            }
-
-            val json = JSONObject(textoResposta)
-            val escolhas = json.getJSONArray("choices")
-            val primeira = escolhas.getJSONObject(0)
-            val mensagem = primeira.getJSONObject("message")
-            mensagem.getString("content")
-        } catch (e: IOException) {
-            "Não consegui me conectar à internet. Tenta de novo em instantes."
-        } catch (e: Exception) {
-            "Algo deu errado ao processar a resposta: ${e.message}"
-        }
-    }
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TelaDeChat(aoAbrirConfig: () -> Unit) {
@@ -327,6 +209,9 @@ fun TelaDeChat(aoAbrirConfig: () -> Unit) {
     var textoDigitado by remember { mutableStateOf("") }
     var carregando by remember { mutableStateOf(false) }
     var buscandoWeb by remember { mutableStateOf(false) }
+
+    // Origem (provedor · modelo) de cada resposta da IA, por id de mensagem
+    val origensIA = remember { mutableStateMapOf<Int, String>() }
 
     // ── Estado do comando de voz imersivo ──
     var estadoVoz by remember { mutableStateOf(EstadoVoz.INATIVO) }
@@ -476,10 +361,6 @@ fun TelaDeChat(aoAbrirConfig: () -> Unit) {
     //    enquanto a resposta está sendo gerada, a resposta continua indo
     //    para a conversa certa e não contamina a aba ativa. ──
     fun enviarMensagem(texto: String, idConversa: Int) {
-        val provedor = Configuracoes.obterProvedorAtual(contexto)
-        val modelo = Configuracoes.obterModeloAtual(contexto)
-        val chave = Configuracoes.obterChaveAtual(contexto)
-
         escopo.launch {
             db.agenteDao().salvarMensagem(
                 MensagemEntity(conversaId = idConversa, autor = "você", texto = texto, dataHora = System.currentTimeMillis())
@@ -489,97 +370,108 @@ fun TelaDeChat(aoAbrirConfig: () -> Unit) {
                 mensagens = db.agenteDao().listarMensagensDaConversa(idConversa)
             }
 
-            if (chave.isBlank()) {
+            if (nenhumProvedorConfigurado(contexto)) {
                 db.agenteDao().salvarMensagem(
-                    MensagemEntity(conversaId = idConversa, autor = "agente", texto = "Você ainda não configurou uma chave de API para o provedor \"$provedor\". Toque no menu (☰) para adicionar uma.", dataHora = System.currentTimeMillis())
+                    MensagemEntity(conversaId = idConversa, autor = "agente", texto = "Nenhum provedor de IA está ativo na cascata. Abra as Configurações, ligue um provedor e adicione pelo menos um modelo.", dataHora = System.currentTimeMillis())
                 )
             } else {
                 carregando = true
                 val lembretesAtuais = db.agenteDao().listarTodosLembretes()
                 val instrucao = montarInstrucaoDeMemoria(lembretesAtuais)
                 val historico = db.agenteDao().listarMensagensDaConversa(idConversa)
-                val respostaBruta = perguntarComProvedor(historico, provedor, modelo, chave, instrucao)
-                var respostaLimpa = processarAcoesDeMemoria(respostaBruta, db)
 
-                // Proteção contra loop de repetição do modelo (degeneração)
-                if (respostaDegenerada(respostaLimpa)) {
-                    val segundaTentativa = processarAcoesDeMemoria(
-                        perguntarComProvedor(historico, provedor, modelo, chave, instrucao),
-                        db
-                    )
-                    if (!respostaDegenerada(segundaTentativa)) {
-                        respostaLimpa = segundaTentativa
-                    }
-                }
+                try {
+                    var cascata = CascataIA.perguntar(contexto, historico, instrucao)
+                    var respostaLimpa = processarAcoesDeMemoria(cascata.texto, db)
 
-                // ── Busca real na internet quando a IA pede [BUSCAR: ...] ──
-                if (REGEX_BUSCAR.containsMatchIn(respostaLimpa)) {
-                    val termos = REGEX_BUSCAR.findAll(respostaLimpa)
-                        .joinToString("; ") { it.groupValues[1].trim() }
-                        .take(300)
-
-                    buscandoWeb = true
-                    val resultadoWeb = withContext(Dispatchers.IO) {
-                        runCatching {
-                            PesquisadorWeb.buscar(
-                                termos,
-                                Configuracoes.obterChaveTavily(contexto),
-                                Configuracoes.obterChaveBrave(contexto)
-                            )
-                        }.getOrElse { "" }
-                    }
-                    buscandoWeb = false
-
-                    if (resultadoWeb.isNotBlank()) {
-                        val contextoWeb = "RESULTADOS DA BUSCA NA INTERNET para \"$termos\":\n\n" +
-                            resultadoWeb +
-                            "\n\nResponda à pergunta do usuário usando esses resultados reais. " +
-                            "Se os resultados não contiverem a informação pedida, diga que não encontrou — nunca invente."
-                        val mensagemSistema = MensagemEntity(
-                            conversaId = idConversa,
-                            autor = "sistema",
-                            texto = contextoWeb,
-                            dataHora = System.currentTimeMillis()
+                    // Proteção contra loop de repetição do modelo (degeneração):
+                    // repete a cascata uma vez, pulando o modelo que degenerou.
+                    if (respostaDegenerada(respostaLimpa)) {
+                        val segundaTentativa = CascataIA.perguntar(
+                            contexto, historico, instrucao,
+                            excluirModelo = "${cascata.provedor}:${cascata.modelo}"
                         )
-                        val respostaFinalBruta = perguntarComProvedor(
-                            historico + mensagemSistema,
-                            provedor, modelo, chave, instrucao
-                        )
-                        val respostaFinalValida = !respostaFinalBruta.isBlank() &&
-                            !respostaFinalBruta.startsWith("Erro")
-                        respostaLimpa = if (respostaFinalValida) {
-                            processarAcoesDeMemoria(respostaFinalBruta, db)
-                        } else {
-                            // IA falhou na 2ª chamada: salva a 1ª resposta (sem marcações) + aviso
-                            respostaLimpa.replace(REGEX_BUSCAR, "").trim() +
-                                "\n\n(A busca funcionou, mas houve falha ao gerar a resposta final. Tente de novo.)"
+                        val limpaSegunda = processarAcoesDeMemoria(segundaTentativa.texto, db)
+                        if (!respostaDegenerada(limpaSegunda)) {
+                            cascata = segundaTentativa
+                            respostaLimpa = limpaSegunda
                         }
-                    } else {
-                        respostaLimpa = respostaLimpa.replace(REGEX_BUSCAR, "").trim() +
-                            "\n\n(Não consegui pesquisar na internet agora.)"
                     }
-                }
 
-                // ── Confirmação seletiva com Google (só "sensível ao tempo") ──
-                if (Configuracoes.usarConfirmacaoGoogle(contexto) &&
-                    ClassificadorPergunta.sensivelAoTempo(texto) &&
-                    respostaLimpa.isNotBlank() &&
-                    !respostaLimpa.startsWith("Erro")
-                ) {
-                    val correcao = withContext(Dispatchers.IO) {
-                        runCatching {
-                            ConfirmacaoGoogle.confirmar(chave, respostaLimpa, texto)
-                        }.getOrElse { null }
-                    }
-                    if (!correcao.isNullOrBlank()) {
-                        respostaLimpa = correcao
-                    }
-                }
+                    // ── Busca real na internet quando a IA pede [BUSCAR: ...] ──
+                    if (REGEX_BUSCAR.containsMatchIn(respostaLimpa)) {
+                        val termos = REGEX_BUSCAR.findAll(respostaLimpa)
+                            .joinToString("; ") { it.groupValues[1].trim() }
+                            .take(300)
 
-                carregando = false
-                db.agenteDao().salvarMensagem(
-                    MensagemEntity(conversaId = idConversa, autor = "agente", texto = respostaLimpa, dataHora = System.currentTimeMillis())
-                )
+                        buscandoWeb = true
+                        val resultadoWeb = withContext(Dispatchers.IO) {
+                            runCatching {
+                                PesquisadorWeb.buscar(
+                                    termos,
+                                    Configuracoes.obterChaveTavily(contexto),
+                                    Configuracoes.obterChaveBrave(contexto)
+                                )
+                            }.getOrElse { "" }
+                        }
+                        buscandoWeb = false
+
+                        if (resultadoWeb.isNotBlank()) {
+                            val contextoWeb = "RESULTADOS DA BUSCA NA INTERNET para \"$termos\":\n\n" +
+                                resultadoWeb +
+                                "\n\nResponda à pergunta do usuário usando esses resultados reais. " +
+                                "Se os resultados não contiverem a informação pedida, diga que não encontrou — nunca invente."
+                            val mensagemSistema = MensagemEntity(
+                                conversaId = idConversa,
+                                autor = "sistema",
+                                texto = contextoWeb,
+                                dataHora = System.currentTimeMillis()
+                            )
+                            val respostaFinal = CascataIA.perguntar(
+                                contexto, historico + mensagemSistema, instrucao
+                            )
+                            respostaLimpa = processarAcoesDeMemoria(respostaFinal.texto, db)
+                            cascata = respostaFinal
+                        } else {
+                            respostaLimpa = respostaLimpa.replace(REGEX_BUSCAR, "").trim() +
+                                "\n\n(Não consegui pesquisar na internet agora.)"
+                        }
+                    }
+
+                    // ── Confirmação seletiva com Google (só "sensível ao tempo") ──
+                    if (Configuracoes.usarConfirmacaoGoogle(contexto) &&
+                        ClassificadorPergunta.sensivelAoTempo(texto) &&
+                        respostaLimpa.isNotBlank()
+                    ) {
+                        val chaveGemini = Configuracoes.obterChaveDoProvedor(contexto, "Gemini")
+                        if (chaveGemini.isNotBlank()) {
+                            val correcao = withContext(Dispatchers.IO) {
+                                runCatching {
+                                    ConfirmacaoGoogle.confirmar(chaveGemini, respostaLimpa, texto)
+                                }.getOrElse { null }
+                            }
+                            if (!correcao.isNullOrBlank()) {
+                                respostaLimpa = correcao
+                            }
+                        }
+                    }
+
+                    carregando = false
+                    val novoId = db.agenteDao().salvarMensagem(
+                        MensagemEntity(conversaId = idConversa, autor = "agente", texto = respostaLimpa, dataHora = System.currentTimeMillis())
+                    ).toInt()
+                    origensIA[novoId] = "${cascata.provedor} · ${cascata.modelo}"
+                } catch (e: FalhaIA.SemRede) {
+                    carregando = false
+                    db.agenteDao().salvarMensagem(
+                        MensagemEntity(conversaId = idConversa, autor = "agente", texto = "Não consegui me conectar à internet agora. Tenta de novo em instantes.", dataHora = System.currentTimeMillis())
+                    )
+                } catch (e: TodasFalharam) {
+                    carregando = false
+                    db.agenteDao().salvarMensagem(
+                        MensagemEntity(conversaId = idConversa, autor = "agente", texto = "Tentei de todas as formas responder agora e não consegui. Tenta de novo em instantes.", dataHora = System.currentTimeMillis())
+                    )
+                }
             }
 
             if (conversaAtualId == idConversa) {
@@ -828,7 +720,8 @@ fun TelaDeChat(aoAbrirConfig: () -> Unit) {
                     BolhaMensagem(
                         texto = msg.texto,
                         hora = formatarHora(msg.dataHora),
-                        enviada = msg.autor == "você"
+                        enviada = msg.autor == "você",
+                        origemIA = if (msg.autor == "agente") origensIA[msg.id] else null
                     )
                 }
                 if (carregando) {

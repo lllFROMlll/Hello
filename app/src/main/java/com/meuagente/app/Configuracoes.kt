@@ -129,4 +129,58 @@ object Configuracoes {
         val prefs = contexto.getSharedPreferences(ARQUIVO, Context.MODE_PRIVATE)
         return prefs.getBoolean(CONFIRMACAO_GOOGLE, true)
     }
+
+    // ── Cascata de IA (ProvedorIA): interruptores, prioridade e modelos ──
+    private const val CHAVE_AUTO_CASCATA = "auto_cascata"
+    private const val PREFIXO_PROVEDOR_ATIVO = "provedor_ativo_"
+    private const val PREFIXO_PRIORIDADE = "prioridade_"
+    private const val PREFIXO_MODELOS = "modelos_"
+
+    // Automático LIGADO: o app ordena os modelos por complexidade da
+    // pergunta. DESLIGADO (padrão): segue a prioridade manual do usuário.
+    fun salvarAutoCascata(contexto: Context, ativa: Boolean) {
+        val prefs = contexto.getSharedPreferences(ARQUIVO, Context.MODE_PRIVATE)
+        prefs.edit().putBoolean(CHAVE_AUTO_CASCATA, ativa).apply()
+    }
+
+    fun obterAutoCascata(contexto: Context): Boolean {
+        val prefs = contexto.getSharedPreferences(ARQUIVO, Context.MODE_PRIVATE)
+        return prefs.getBoolean(CHAVE_AUTO_CASCATA, false)
+    }
+
+    fun salvarProvedorAtivoNaCascata(contexto: Context, provedor: String, ativo: Boolean) {
+        val prefs = contexto.getSharedPreferences(ARQUIVO, Context.MODE_PRIVATE)
+        prefs.edit().putBoolean(PREFIXO_PROVEDOR_ATIVO + provedor, ativo).apply()
+    }
+
+    fun obterProvedorAtivoNaCascata(contexto: Context, provedor: String, padrao: Boolean = false): Boolean {
+        val prefs = contexto.getSharedPreferences(ARQUIVO, Context.MODE_PRIVATE)
+        return prefs.getBoolean(PREFIXO_PROVEDOR_ATIVO + provedor, padrao)
+    }
+
+    fun salvarPrioridadeProvedor(contexto: Context, provedor: String, prioridade: Int) {
+        val prefs = contexto.getSharedPreferences(ARQUIVO, Context.MODE_PRIVATE)
+        prefs.edit().putInt(PREFIXO_PRIORIDADE + provedor, prioridade).apply()
+    }
+
+    fun obterPrioridadeProvedor(contexto: Context, provedor: String): Int {
+        val prefs = contexto.getSharedPreferences(ARQUIVO, Context.MODE_PRIVATE)
+        return prefs.getInt(PREFIXO_PRIORIDADE + provedor, 99)
+    }
+
+    // Lista de modelos do provedor, na ORDEM de tentativa da cascata.
+    // Migração: se a lista estiver vazia, usa o modelo único antigo.
+    fun salvarModelosProvedor(contexto: Context, provedor: String, modelos: List<String>) {
+        val prefs = contexto.getSharedPreferences(ARQUIVO, Context.MODE_PRIVATE)
+        prefs.edit().putString(PREFIXO_MODELOS + provedor, modelos.joinToString(",")).apply()
+    }
+
+    fun obterModelosProvedor(contexto: Context, provedor: String, modeloLegado: String = ""): List<String> {
+        val prefs = contexto.getSharedPreferences(ARQUIVO, Context.MODE_PRIVATE)
+        val salvo = prefs.getString(PREFIXO_MODELOS + provedor, "").orEmpty()
+        if (salvo.isNotBlank()) {
+            return salvo.split(",").map { it.trim() }.filter { it.isNotBlank() }
+        }
+        return if (modeloLegado.isNotBlank()) listOf(modeloLegado) else emptyList()
+    }
 }

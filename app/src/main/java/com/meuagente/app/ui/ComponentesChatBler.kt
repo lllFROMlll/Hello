@@ -24,7 +24,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -253,9 +256,11 @@ fun BolhaMensagem(
     texto: String,
     hora: String,
     enviada: Boolean,
-    mostrarCheck: Boolean = false
+    mostrarCheck: Boolean = false,
+    origemIA: String? = null
 ) {
     val forma = FormaBolhaComCauda(caudaNaDireita = enviada, raio = 26.dp)
+    var mostrarDetalheOrigem by remember { mutableStateOf(false) }
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = if (enviada) Arrangement.End else Arrangement.Start
@@ -322,6 +327,25 @@ fun BolhaMensagem(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.align(Alignment.End)
                 ) {
+                    if (!enviada && origemIA != null) {
+                        Box(
+                            modifier = Modifier
+                                .size(7.dp)
+                                .background(
+                                    color = corOrigemIA(origemIA),
+                                    shape = androidx.compose.foundation.shape.CircleShape
+                                )
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null
+                                ) { mostrarDetalheOrigem = !mostrarDetalheOrigem }
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        if (mostrarDetalheOrigem) {
+                            Text(text = origemIA, color = BlerTextoHora, fontSize = 10.sp)
+                            Spacer(modifier = Modifier.width(6.dp))
+                        }
+                    }
                     Text(text = hora, color = BlerTextoHora, fontSize = 12.sp)
                     if (mostrarCheck) {
                         Spacer(modifier = Modifier.width(6.dp))
@@ -331,6 +355,14 @@ fun BolhaMensagem(
             }
         }
     }
+}
+
+private fun corOrigemIA(origem: String): Color = when {
+    origem.startsWith("Gemini", ignoreCase = true) -> Color(0xFF3B82F6)
+    origem.startsWith("OpenRouter", ignoreCase = true) -> Color(0xFFEF4444)
+    origem.startsWith("9Router", ignoreCase = true) -> Color(0xFFEAB308)
+    origem.startsWith("Local", ignoreCase = true) -> Color(0xFFF97316)
+    else -> Color(0xFF94A3B8)
 }
 
 @Composable

@@ -2,6 +2,7 @@ package com.meuagente.app
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
@@ -20,8 +21,6 @@ private val NeonLilas = Color(0xFFB388FF)
 private val NeonRosa = Color(0xFFFF4DDE)
 
 private val PROVEDORES_CONHECIDOS = listOf("Gemini", "OpenAI", "OpenRouter", "Anthropic", "Personalizado")
-
-private const val OPCAO_MANUAL = "Outro (digitar manualmente)"
 
 // Modelos mais usados de cada provedor, pra facilitar a escolha.
 // Nenhuma lista é fechada: sempre tem a opção de digitar manualmente
@@ -69,17 +68,6 @@ fun TelaConfiguracoes(aoVoltar: () -> Unit) {
     var menuProvedorAberto by remember { mutableStateOf(false) }
 
     val modeloSalvo = remember { Configuracoes.obterModeloAtual(contexto) }
-    val listaModelosInicial = MODELOS_POR_PROVEDOR[provedor] ?: emptyList()
-
-    // Se o modelo salvo está na lista conhecida do provedor, começa
-    // com ele selecionado. Senão, começa em "manual" com o valor salvo.
-    var modeloSelecionado by remember {
-        mutableStateOf(if (listaModelosInicial.contains(modeloSalvo)) modeloSalvo else OPCAO_MANUAL)
-    }
-    var modeloManual by remember {
-        mutableStateOf(if (listaModelosInicial.contains(modeloSalvo)) "" else modeloSalvo)
-    }
-    var menuModeloAberto by remember { mutableStateOf(false) }
 
     var chave by remember { mutableStateOf(Configuracoes.obterChaveDoProvedor(contexto, provedor)) }
     var salvo by remember { mutableStateOf(false) }
@@ -96,10 +84,7 @@ fun TelaConfiguracoes(aoVoltar: () -> Unit) {
         )
     }
 
-    val listaModelos = MODELOS_POR_PROVEDOR[provedor] ?: emptyList()
-
     Column(modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState())) {
-
         Text(text = "Configurações", style = MaterialTheme.typography.headlineSmall)
 
         // ── Linha neon fina abaixo do título ──
@@ -136,10 +121,6 @@ fun TelaConfiguracoes(aoVoltar: () -> Unit) {
                         onClick = {
                             provedor = opcao
                             chave = Configuracoes.obterChaveDoProvedor(contexto, opcao)
-                            // Trocou de provedor: reseta a escolha de modelo,
-                            // já que a lista de opções é outra agora.
-                            modeloSelecionado = OPCAO_MANUAL
-                            modeloManual = ""
                             salvo = false
                             menuProvedorAberto = false
                         }
@@ -150,52 +131,92 @@ fun TelaConfiguracoes(aoVoltar: () -> Unit) {
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        Text(text = "2. Selecione o modelo")
+        Text(text = "2. Cascata de IA (provedores e modelos)")
         Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = "Ligue os provedores, defina a prioridade (1 tenta primeiro) " +
+                "e escolha os modelos em ordem de tentativa.",
+            style = MaterialTheme.typography.bodySmall
+        )
+        Spacer(modifier = Modifier.height(12.dp))
 
-        if (listaModelos.isNotEmpty()) {
-            ExposedDropdownMenuBox(
-                expanded = menuModeloAberto,
-                onExpandedChange = { menuModeloAberto = it }
-            ) {
-                OutlinedTextField(
-                    value = modeloSelecionado,
-                    onValueChange = {},
-                    readOnly = true,
-                    modifier = Modifier.fillMaxWidth().menuAnchor(),
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = menuModeloAberto) }
+        var autoCascata by remember { mutableStateOf(Configuracoes.obterAutoCascata(contexto)) }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Switch(
+                checked = autoCascata,
+                onCheckedChange = { ativa ->
+                    autoCascata = ativa
+                    Configuracoes.salvarAutoCascata(contexto, ativa)
+                }
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Ordem automática (por complexidade da pergunta)")
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+
+        val provedorDasChaves = provedor
+        for (provedorCascata in listOf("Gemini", "OpenRouter")) {
+            var ativo by remember {
+                mutableStateOf(Configuracoes.obterProvedorAtivoNaCascata(contexto, provedorCascata, provedorCascata == "Gemini"))
+            }
+            var prioridadeTexto by remember {
+                mutableStateOf(
+                    Configuracoes.obterPrioridadeProvedor(contexto, provedorCascata)
+                        .takeIf { it != 99 }?.toString().orEmpty()
                 )
-                ExposedDropdownMenu(expanded = menuModeloAberto, onDismissRequest = { menuModeloAberto = false }) {
-                    (listaModelos + OPCAO_MANUAL).forEach { opcao ->
-                        DropdownMenuItem(
-                            text = { Text(opcao) },
-                            onClick = {
-                                modeloSelecionado = opcao
-                                salvo = false
-                                menuModeloAberto = false
+            }
+            val legado = modeloSalvo
+                .takeIf { provedorCascata == Configuracoes.obterProvedorAtual(contexto) && it.isNotBlank() }
+                .orEmpty()
+            var modelosSelecionados by remember {
+                mutableStateOf(Configuracoes.obterModelosProvedor(contexto, provedorCascata, legado))
+            }
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Switch(
+                        checked = ativo,
+                        onCheckedChange = { valor ->
+                            ativo = valor
+                            Configuracoes.salvarProvedorAtivoNaCascata(contexto, provedorCascata, valor)
+                        }
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(text = provedorCascata, modifier = Modifier.weight(1f))
+                    OutlinedTextField(
+                        value = prioridadeTexto,
+                        onValueChange = { valor ->
+                            prioridadeTexto = valor.filter { it.isDigit() }.take(2)
+                            prioridadeTexto.toIntOrNull()?.let {
+                                Configuracoes.salvarPrioridadeProvedor(contexto, provedorCascata, it)
                             }
-                        )
-                    }
+                        },
+                        enabled = ativo,
+                        modifier = Modifier.width(80.dp),
+                        placeholder = { Text("Nº") }
+                    )
+                }
+                if (ativo) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    SeletorModelosIA(
+                        sugestoes = MODELOS_POR_PROVEDOR[provedorCascata] ?: emptyList(),
+                        selecionados = modelosSelecionados,
+                        onChange = { novaLista ->
+                            modelosSelecionados = novaLista
+                            Configuracoes.salvarModelosProvedor(contexto, provedorCascata, novaLista)
+                        }
+                    )
                 }
             }
-            Spacer(modifier = Modifier.height(8.dp))
-        }
-
-        if (listaModelos.isEmpty() || modeloSelecionado == OPCAO_MANUAL) {
-            OutlinedTextField(
-                value = modeloManual,
-                onValueChange = {
-                    modeloManual = it
-                    salvo = false
-                },
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("Digite o nome exato do modelo...") }
-            )
         }
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        Text(text = "3. Cole a chave de API deste provedor")
+        Text(text = "3. Cole a chave de API do provedor selecionado acima (\"$provedorDasChaves\")")
         Spacer(modifier = Modifier.height(4.dp))
 
         OutlinedTextField(
@@ -211,9 +232,13 @@ fun TelaConfiguracoes(aoVoltar: () -> Unit) {
         Spacer(modifier = Modifier.height(16.dp))
 
         Button(onClick = {
-            val modeloFinal = if (modeloSelecionado == OPCAO_MANUAL) modeloManual else modeloSelecionado
+            // O "modelo atual" passa a ser o primeiro da lista do provedor
+            // selecionado (mantém a voz/multimodal e demais leituras ok).
+            val modelosDoProvedor = Configuracoes.obterModelosProvedor(contexto, provedor)
+            if (modelosDoProvedor.isNotEmpty()) {
+                Configuracoes.salvarModeloAtual(contexto, modelosDoProvedor.first())
+            }
             Configuracoes.salvarProvedorAtual(contexto, provedor)
-            Configuracoes.salvarModeloAtual(contexto, modeloFinal)
             Configuracoes.salvarChaveDoProvedor(contexto, provedor, chave)
             salvo = true
         }) {
@@ -371,6 +396,72 @@ fun TelaConfiguracoes(aoVoltar: () -> Unit) {
                 end = Offset(size.width, 0f),
                 strokeWidth = 2f
             )
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun SeletorModelosIA(
+    sugestoes: List<String>,
+    selecionados: List<String>,
+    onChange: (List<String>) -> Unit
+) {
+    var consulta by remember { mutableStateOf("") }
+
+    OutlinedTextField(
+        value = consulta,
+        onValueChange = { consulta = it },
+        modifier = Modifier.fillMaxWidth(),
+        placeholder = { Text("Buscar ou digitar modelo...") },
+        trailingIcon = {
+            if (consulta.isNotBlank()) {
+                TextButton(onClick = {
+                    val nome = consulta.trim()
+                    if (nome.isNotBlank() && !selecionados.contains(nome)) {
+                        onChange(selecionados + nome)
+                    }
+                    consulta = ""
+                }) {
+                    Text("+")
+                }
+            }
+        }
+    )
+
+    Spacer(modifier = Modifier.height(6.dp))
+
+    if (selecionados.isNotEmpty()) {
+        Text(
+            text = "Ordem de tentativa (toque para remover):",
+            style = MaterialTheme.typography.bodySmall
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            selecionados.forEachIndexed { indice, modelo ->
+                FilterChip(
+                    selected = true,
+                    onClick = { onChange(selecionados.filterIndexed { i, _ -> i != indice }) },
+                    label = { Text("${indice + 1}. $modelo") }
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(6.dp))
+    }
+
+    val filtradas = sugestoes.filter { sugestao ->
+        sugestao.contains(consulta.trim(), ignoreCase = true) && !selecionados.contains(sugestao)
+    }
+
+    if (filtradas.isNotEmpty()) {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            filtradas.forEach { sugestao ->
+                FilterChip(
+                    selected = false,
+                    onClick = { onChange(selecionados + sugestao) },
+                    label = { Text(sugestao) }
+                )
+            }
         }
     }
 }
