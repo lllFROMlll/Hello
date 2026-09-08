@@ -92,4 +92,41 @@ object Configuracoes {
         val prefs = contexto.getSharedPreferences(ARQUIVO, Context.MODE_PRIVATE)
         return prefs.getBoolean(CHAVE_SONS, true)
     }
+
+    // ── Busca na internet: chaves opcionais dos provedores de busca ──
+    private const val CHAVE_TAVILY = "chave_tavily"
+    private const val CHAVE_BRAVE = "chave_brave"
+    private const val CONFIRMACAO_GOOGLE = "confirmacao_google"
+
+    fun salvarChaveTavily(contexto: Context, chave: String) {
+        val prefs = contexto.getSharedPreferences(ARQUIVO, Context.MODE_PRIVATE)
+        prefs.edit().putString(CHAVE_TAVILY, chave).apply()
+    }
+
+    fun obterChaveTavily(contexto: Context): String {
+        val prefs = contexto.getSharedPreferences(ARQUIVO, Context.MODE_PRIVATE)
+        return prefs.getString(CHAVE_TAVILY, "") ?: ""
+    }
+
+    fun salvarChaveBrave(contexto: Context, chave: String) {
+        val prefs = contexto.getSharedPreferences(ARQUIVO, Context.MODE_PRIVATE)
+        prefs.edit().putString(CHAVE_BRAVE, chave).apply()
+    }
+
+    fun obterChaveBrave(contexto: Context): String {
+        val prefs = contexto.getSharedPreferences(ARQUIVO, Context.MODE_PRIVATE)
+        return prefs.getString(CHAVE_BRAVE, "") ?: ""
+    }
+
+    // Camada final de confirmação com Google (Gemini Grounding), só para
+    // perguntas sensíveis ao tempo. Ativa por padrão.
+    fun salvarConfirmacaoGoogle(contexto: Context, ativa: Boolean) {
+        val prefs = contexto.getSharedPreferences(ARQUIVO, Context.MODE_PRIVATE)
+        prefs.edit().putBoolean(CONFIRMACAO_GOOGLE, ativa).apply()
+    }
+
+    fun usarConfirmacaoGoogle(contexto: Context): Boolean {
+        val prefs = contexto.getSharedPreferences(ARQUIVO, Context.MODE_PRIVATE)
+        return prefs.getBoolean(CONFIRMACAO_GOOGLE, true)
+    }
 }

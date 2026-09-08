@@ -520,7 +520,13 @@ fun TelaDeChat(aoAbrirConfig: () -> Unit) {
 
                     buscandoWeb = true
                     val resultadoWeb = withContext(Dispatchers.IO) {
-                        runCatching { PesquisadorWeb.buscar(termos) }.getOrElse { "" }
+                        runCatching {
+                            PesquisadorWeb.buscar(
+                                termos,
+                                Configuracoes.obterChaveTavily(contexto),
+                                Configuracoes.obterChaveBrave(contexto)
+                            )
+                        }.getOrElse { "" }
                     }
                     buscandoWeb = false
 
@@ -551,6 +557,22 @@ fun TelaDeChat(aoAbrirConfig: () -> Unit) {
                     } else {
                         respostaLimpa = respostaLimpa.replace(REGEX_BUSCAR, "").trim() +
                             "\n\n(Não consegui pesquisar na internet agora.)"
+                    }
+                }
+
+                // ── Confirmação seletiva com Google (só "sensível ao tempo") ──
+                if (Configuracoes.usarConfirmacaoGoogle(contexto) &&
+                    ClassificadorPergunta.sensivelAoTempo(texto) &&
+                    respostaLimpa.isNotBlank() &&
+                    !respostaLimpa.startsWith("Erro")
+                ) {
+                    val correcao = withContext(Dispatchers.IO) {
+                        runCatching {
+                            ConfirmacaoGoogle.confirmar(chave, respostaLimpa, texto)
+                        }.getOrElse { null }
+                    }
+                    if (!correcao.isNullOrBlank()) {
+                        respostaLimpa = correcao
                     }
                 }
 

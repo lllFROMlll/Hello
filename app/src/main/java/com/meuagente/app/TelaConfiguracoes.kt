@@ -294,6 +294,70 @@ fun TelaConfiguracoes(aoVoltar: () -> Unit) {
 
         Spacer(modifier = Modifier.height(24.dp))
 
+        // ════════════════════════════════════════════════════
+        // SEÇÃO: BUSCA NA INTERNET
+        // ════════════════════════════════════════════════════
+        Text(text = "Busca na internet", style = MaterialTheme.typography.titleMedium)
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = "Sem as chaves abaixo, a busca usa fontes abertas " +
+                "(DuckDuckGo, Bing, Mojeek, SearXNG, Wikipedia). " +
+                "Com as chaves, a busca fica mais estável e completa.",
+            style = MaterialTheme.typography.bodySmall
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Text(text = "Chave da Tavily (opcional):", style = MaterialTheme.typography.bodyMedium)
+        Spacer(modifier = Modifier.height(4.dp))
+        var chaveTavily by remember { mutableStateOf(Configuracoes.obterChaveTavily(contexto)) }
+        OutlinedTextField(
+            value = chaveTavily,
+            onValueChange = { valor ->
+                chaveTavily = valor
+                Configuracoes.salvarChaveTavily(contexto, valor)
+            },
+            modifier = Modifier.fillMaxWidth(),
+            placeholder = { Text("tvly-...") }
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Text(text = "Chave da Brave Search (opcional):", style = MaterialTheme.typography.bodyMedium)
+        Spacer(modifier = Modifier.height(4.dp))
+        var chaveBrave by remember { mutableStateOf(Configuracoes.obterChaveBrave(contexto)) }
+        OutlinedTextField(
+            value = chaveBrave,
+            onValueChange = { valor ->
+                chaveBrave = valor
+                Configuracoes.salvarChaveBrave(contexto, valor)
+            },
+            modifier = Modifier.fillMaxWidth(),
+            placeholder = { Text("BSA...") }
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        var confirmacaoGoogle by remember { mutableStateOf(Configuracoes.usarConfirmacaoGoogle(contexto)) }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Switch(
+                checked = confirmacaoGoogle,
+                onCheckedChange = { ativa ->
+                    confirmacaoGoogle = ativa
+                    Configuracoes.salvarConfirmacaoGoogle(contexto, ativa)
+                }
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Confirmar fatos atuais com o Google (usa sua chave Gemini)")
+        }
+        Text(
+            text = "Para perguntas sensíveis ao tempo (notícias, placares, " +
+                "cotações), o Blér faz 1 verificação extra no Google antes " +
+                "de responder, para evitar dados desatualizados.",
+            style = MaterialTheme.typography.bodySmall
+        )
+
+        Spacer(modifier = Modifier.height(24.dp))
+
         Button(onClick = aoVoltar) {
             Text("Voltar para o chat")
         }
