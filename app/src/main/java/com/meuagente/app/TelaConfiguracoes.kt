@@ -1,36 +1,43 @@
 package com.meuagente.app
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-
 import androidx.compose.ui.window.PopupProperties
 import com.meuagente.app.ia.ModeloOpenRouter
 import com.meuagente.app.ia.RepositorioModelosOpenRouter
 import kotlinx.coroutines.launch
 
-// Cores neon do projeto Blér (mesmas do chat)
+// ── Paleta Neon do Projeto Blér ──
 private val NeonAzul = Color(0xFF00E5FF)
 private val NeonLilas = Color(0xFFB388FF)
 private val NeonRosa = Color(0xFFFF4DDE)
+private val VerdeStatus = Color(0xFF69F0AE)
 
-// Texto secundário legível sobre fundo escuro
-private val TextoSecundario = Color(0xFFB8C0D0)
+// ── Tipografia de Alto Contraste sobre Fundo Escuro ──
+private val TextoPrimario = Color(0xFFF8FAFC)
+private val TextoExplicativo = Color(0xFFCBD5E1) // Alto contraste (Slate 300)
+private val TextoApoio = Color(0xFF94A3B8)       // Legenda secundária nítida (Slate 400)
+private val TextoPlaceholder = Color(0xFF64748B) // Placeholder legível
+private val TextoDesativado = Color(0xFF64748B)
 
-// Provedores que participam da cascata hoje. 9Router e IA Local
-// entram aqui quando forem implementados.
+// Provedores que participam da cascata
 private val PROVEDORES_CASCATA = listOf("Gemini", "OpenRouter", "OpenAI")
 
 data class SugestaoModelo(
@@ -39,8 +46,7 @@ data class SugestaoModelo(
     val ehGratuito: Boolean = false
 )
 
-// Modelos mais usados de cada provedor como sugestões rápidas.
-// O OpenRouter agora busca a lista completa ao vivo via API pública.
+// Modelos mais usados de cada provedor como sugestões rápidas
 private val MODELOS_POR_PROVEDOR: Map<String, List<SugestaoModelo>> = mapOf(
     "Gemini" to listOf(
         SugestaoModelo("gemini-2.5-flash", "Gemini 2.5 Flash"),
@@ -57,19 +63,92 @@ private val MODELOS_POR_PROVEDOR: Map<String, List<SugestaoModelo>> = mapOf(
     )
 )
 
+@Composable
+private fun coresCampoTexto() = OutlinedTextFieldDefaults.colors(
+    focusedTextColor = Color(0xFFF8FAFC),
+    unfocusedTextColor = Color(0xFFF8FAFC),
+    focusedContainerColor = Color(0xFF080C1A),
+    unfocusedContainerColor = Color(0xFF080C1A),
+    cursorColor = NeonAzul,
+    focusedBorderColor = NeonAzul,
+    unfocusedBorderColor = Color(0xFF334155),
+    focusedLabelColor = NeonAzul,
+    unfocusedLabelColor = Color(0xFFCBD5E1),
+    focusedPlaceholderColor = TextoPlaceholder,
+    unfocusedPlaceholderColor = TextoPlaceholder,
+    disabledTextColor = TextoDesativado,
+    disabledBorderColor = Color(0xFF1E293B),
+    disabledContainerColor = Color(0xFF080C1A)
+)
+
+@Composable
+private fun coresInterruptor() = SwitchDefaults.colors(
+    checkedThumbColor = Color.White,
+    checkedTrackColor = NeonAzul,
+    uncheckedThumbColor = Color(0xFFCBD5E1),
+    uncheckedTrackColor = Color(0xFF1E293B),
+    uncheckedBorderColor = Color(0xFF475569)
+)
+
+@Composable
+private fun CardSecao(
+    icone: String,
+    titulo: String,
+    subtitulo: String,
+    corDestaque: Color = NeonAzul,
+    conteudo: @Composable ColumnScope.() -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF10162D)),
+        border = BorderStroke(1.dp, Color(0xFF263359))
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = icone,
+                    fontSize = 20.sp,
+                    modifier = Modifier.padding(end = 8.dp)
+                )
+                Text(
+                    text = titulo,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = corDestaque
+                )
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = subtitulo,
+                style = MaterialTheme.typography.bodySmall,
+                color = TextoExplicativo,
+                lineHeight = 17.sp
+            )
+            Spacer(modifier = Modifier.height(14.dp))
+            conteudo()
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TelaConfiguracoes(aoVoltar: () -> Unit) {
     val contexto = LocalContext.current
 
-    // Blocos de provedor que o usuário adicionou. Migração: quem já tem
-    // chave salva entra automaticamente como bloco na primeira abertura.
+    // Provedores configurados (inicia com os que têm chave ou estão ativos; se vazio, inicia com Gemini)
     val provedoresConfigurados = remember {
         mutableStateListOf<String>().apply {
             PROVEDORES_CASCATA.forEach { provedor ->
-                if (Configuracoes.obterChaveDoProvedor(contexto, provedor).isNotBlank()) {
+                val temChave = Configuracoes.obterChaveDoProvedor(contexto, provedor).isNotBlank()
+                val estaAtivo = Configuracoes.obterProvedorAtivoNaCascata(contexto, provedor, padrao = false)
+                if (temChave || estaAtivo) {
                     add(provedor)
                 }
+            }
+            if (isEmpty()) {
+                add("Gemini")
+                Configuracoes.salvarProvedorAtivoNaCascata(contexto, "Gemini", true)
             }
         }
     }
@@ -83,12 +162,31 @@ fun TelaConfiguracoes(aoVoltar: () -> Unit) {
             if (modeloVozAtual.isNotBlank()) MapaMultimodal.ehMultimodal(contexto, modeloVozAtual) else true
         )
     }
+    var mensagemModeloPadrao by remember { mutableStateOf("") }
 
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState())) {
-        Text(text = "Configurações", style = MaterialTheme.typography.headlineSmall)
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF04060B))
+            .padding(16.dp)
+            .verticalScroll(rememberScrollState())
+    ) {
+        // ── Cabeçalho da Tela ──
+        Text(
+            text = "Configurações",
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold,
+            color = Color.White
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = "Personalize as inteligências artificiais, voz e pesquisa na web do Blér.",
+            color = TextoExplicativo,
+            style = MaterialTheme.typography.bodySmall
+        )
 
-        // ── Linha neon fina abaixo do título ──
-        Spacer(modifier = Modifier.height(8.dp))
+        // ── Linha neon de destaque ──
+        Spacer(modifier = Modifier.height(10.dp))
         Canvas(modifier = Modifier.fillMaxWidth().height(2.dp)) {
             drawLine(
                 brush = Brush.horizontalGradient(listOf(NeonAzul, NeonLilas, NeonRosa)),
@@ -98,220 +196,451 @@ fun TelaConfiguracoes(aoVoltar: () -> Unit) {
             )
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(18.dp))
 
-        Text(text = "1. Cascata de IA (provedores e modelos)")
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            text = "Adicione provedores, ligue cada um, defina a prioridade " +
-                "(1 tenta primeiro) e escolha os modelos em ordem de tentativa.",
-            color = TextoSecundario,
-            style = MaterialTheme.typography.bodySmall
-        )
-        Spacer(modifier = Modifier.height(12.dp))
+        // ════════════════════════════════════════════════════
+        // CARD 1: CASCATA MULTI-MODELOS E PROVEDORES
+        // ════════════════════════════════════════════════════
+        CardSecao(
+            icone = "🤖",
+            titulo = "1. Provedores e Modelos de IA",
+            subtitulo = "Cadastre as IAs que o Blér pode consultar. Se a primeira falhar, esgotar a cota gratuita ou demorar para responder, o app pula automaticamente para a próxima.",
+            corDestaque = NeonAzul
+        ) {
+            provedoresConfigurados.forEach { nomeProvedor ->
+                BlocoProvedorIA(
+                    nomeProvedor = nomeProvedor,
+                    aoRemover = {
+                        Configuracoes.salvarProvedorAtivoNaCascata(contexto, nomeProvedor, false)
+                        provedoresConfigurados.remove(nomeProvedor)
+                    }
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+            }
 
-        provedoresConfigurados.forEach { nomeProvedor ->
-            BlocoProvedorIA(
-                nomeProvedor = nomeProvedor,
-                aoRemover = {
-                    Configuracoes.salvarProvedorAtivoNaCascata(contexto, nomeProvedor, false)
-                    provedoresConfigurados.remove(nomeProvedor)
+            val disponiveis = PROVEDORES_CASCATA.filter { !provedoresConfigurados.contains(it) }
+            if (disponiveis.isNotEmpty()) {
+                AdicionarProvedorBotao(disponiveis) { escolhido ->
+                    provedoresConfigurados.add(escolhido)
+                    Configuracoes.salvarProvedorAtivoNaCascata(contexto, escolhido, true)
                 }
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-        }
-
-        val disponiveis = PROVEDORES_CASCATA.filter { !provedoresConfigurados.contains(it) }
-        if (disponiveis.isNotEmpty()) {
-            AdicionarProvedorBotao(disponiveis) { escolhido ->
-                provedoresConfigurados.add(escolhido)
-                Configuracoes.salvarProvedorAtivoNaCascata(contexto, escolhido, true)
             }
         }
 
-        if (provedoresConfigurados.isNotEmpty()) {
-            Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(18.dp))
+
+        // ════════════════════════════════════════════════════
+        // CARD 2: REGRAS DE FUNCIONAMENTO
+        // ════════════════════════════════════════════════════
+        CardSecao(
+            icone = "⚡",
+            titulo = "2. Regras de Funcionamento",
+            subtitulo = "Defina como o Blér decide qual inteligência artificial acionar para cada tipo de pergunta.",
+            corDestaque = NeonLilas
+        ) {
             var autoCascata by remember { mutableStateOf(Configuracoes.obterAutoCascata(contexto)) }
-            Row(verticalAlignment = Alignment.CenterVertically) {
+
+            // Item 1: Cascata inteligente por complexidade
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
                 Switch(
                     checked = autoCascata,
                     onCheckedChange = { ativa ->
                         autoCascata = ativa
                         Configuracoes.salvarAutoCascata(contexto, ativa)
-                    }
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Ordem automática (por complexidade da pergunta)")
-            }
-        }
-
-        if (provedoresConfigurados.isNotEmpty()) {
-            Spacer(modifier = Modifier.height(16.dp))
-            Button(onClick = {
-                // O "modelo atual" (usado pela voz e pelo mapa multimodal)
-                // passa a ser o primeiro modelo ativo da cascata.
-                val primeiroAtivo = provedoresConfigurados
-                    .filter { Configuracoes.obterProvedorAtivoNaCascata(contexto, it, it == "Gemini") }
-                    .firstOrNull { Configuracoes.obterChaveDoProvedor(contexto, it).isNotBlank() }
-                val modelosDoProvedor = primeiroAtivo
-                    ?.let { Configuracoes.obterModelosProvedor(contexto, it) }
-                    .orEmpty()
-                if (modelosDoProvedor.isNotEmpty() && primeiroAtivo != null) {
-                    Configuracoes.salvarModeloAtual(contexto, modelosDoProvedor.first())
-                    Configuracoes.salvarProvedorAtual(contexto, primeiroAtivo)
-                }
-            }) {
-                Text("Salvar modelo padrão")
-            }
-        }
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        // ════════════════════════════════════════════════════
-        // SEÇÃO: COMANDO DE VOZ
-        // ════════════════════════════════════════════════════
-        Text(text = "Comando de voz", style = MaterialTheme.typography.titleMedium)
-        Spacer(modifier = Modifier.height(4.dp))
-
-        Text(text = "Modo de voz:", color = TextoSecundario)
-        Spacer(modifier = Modifier.height(4.dp))
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Start) {
-            for (modo in ModoVoz.values()) {
-                FilterChip(
-                    label = { Text(ControladorModoVoz.rotulo(modo)) },
-                    selected = modo == modoVoz,
-                    onClick = {
-                        modoVoz = modo
-                        ControladorModoVoz.salvar(contexto, modo)
                     },
-                    modifier = Modifier.padding(horizontal = 4.dp)
+                    colors = coresInterruptor()
                 )
+                Spacer(modifier = Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Ordem automática inteligente",
+                        fontWeight = FontWeight.SemiBold,
+                        color = TextoPrimario,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
             }
-        }
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            text = ControladorModoVoz.descricao(modoVoz),
-            color = TextoSecundario,
-            style = MaterialTheme.typography.bodySmall
-        )
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        if (modeloVozAtual.isNotBlank()) {
+            Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "Este modelo aceita áudio (multimodal):",
-                color = TextoSecundario,
+                text = "Quando ativado: perguntas simples e saudações vão direto para modelos ultrarrápidos e gratuitos. Perguntas longas, código ou raciocínio complexo acionam modelos avançados.",
+                color = TextoApoio,
+                style = MaterialTheme.typography.bodySmall,
+                lineHeight = 16.sp
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+            HorizontalDivider(color = Color(0xFF1E284A), thickness = 1.dp)
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Item 2: Salvar modelo padrão
+            Text(
+                text = "Sincronizar Modelo Principal",
+                fontWeight = FontWeight.SemiBold,
+                color = TextoPrimario,
                 style = MaterialTheme.typography.bodyMedium
             )
-            Spacer(modifier = Modifier.height(4.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Switch(
-                    checked = modeloAceitaAudio,
-                    onCheckedChange = { aceita ->
-                        modeloAceitaAudio = aceita
-                        MapaMultimodal.marcarAceitaAudio(contexto, modeloVozAtual, aceita)
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = "Define o primeiro modelo configurado na cascata como o padrão oficial do app (usado no comando de voz e em novas conversas).",
+                color = TextoApoio,
+                style = MaterialTheme.typography.bodySmall,
+                lineHeight = 16.sp
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+
+            OutlinedButton(
+                onClick = {
+                    val primeiroAtivo = provedoresConfigurados
+                        .filter { Configuracoes.obterProvedorAtivoNaCascata(contexto, it, it == "Gemini") }
+                        .firstOrNull { Configuracoes.obterChaveDoProvedor(contexto, it).isNotBlank() }
+                    val modelosDoProvedor = primeiroAtivo
+                        ?.let { Configuracoes.obterModelosProvedor(contexto, it) }
+                        .orEmpty()
+
+                    if (modelosDoProvedor.isNotEmpty() && primeiroAtivo != null) {
+                        val novoPadrao = modelosDoProvedor.first()
+                        Configuracoes.salvarModeloAtual(contexto, novoPadrao)
+                        Configuracoes.salvarProvedorAtual(contexto, primeiroAtivo)
+                        mensagemModeloPadrao = "✓ Modelo padrão salvo: $novoPadrao ($primeiroAtivo)"
+                    } else {
+                        mensagemModeloPadrao = "Nenhum provedor ativo com chave e modelo encontrado."
                     }
+                },
+                border = BorderStroke(1.dp, NeonLilas.copy(alpha = 0.8f)),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = NeonLilas)
+            ) {
+                Text("Definir 1º modelo ativo como padrão", fontWeight = FontWeight.SemiBold)
+            }
+
+            if (mensagemModeloPadrao.isNotBlank()) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = mensagemModeloPadrao,
+                    color = VerdeStatus,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Medium
                 )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("$modeloVozAtual")
+            }
+        }
+
+        Spacer(modifier = Modifier.height(18.dp))
+
+        // ════════════════════════════════════════════════════
+        // CARD 3: COMANDO DE VOZ E ÁUDIO
+        // ════════════════════════════════════════════════════
+        CardSecao(
+            icone = "🎙️",
+            titulo = "3. Comando de Voz e Áudio",
+            subtitulo = "Escolha como o microfone do celular ouve sua fala e processa suas instruções.",
+            corDestaque = NeonRosa
+        ) {
+            // Item 1: Seletor de Modo de Voz
+            Text(
+                text = "Modo de escuta do microfone:",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = TextoPrimario
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                for (modo in ModoVoz.values()) {
+                    val selecionado = (modo == modoVoz)
+                    FilterChip(
+                        label = {
+                            Text(
+                                text = ControladorModoVoz.rotulo(modo),
+                                fontWeight = if (selecionado) FontWeight.Bold else FontWeight.Normal,
+                                color = if (selecionado) Color.White else TextoExplicativo
+                            )
+                        },
+                        selected = selecionado,
+                        onClick = {
+                            modoVoz = modo
+                            ControladorModoVoz.salvar(contexto, modo)
+                        },
+                        colors = FilterChipDefaults.filterChipColors(
+                            containerColor = Color(0xFF090D1C),
+                            selectedContainerColor = NeonRosa.copy(alpha = 0.25f)
+                        ),
+                        border = BorderStroke(
+                            1.dp,
+                            if (selecionado) NeonRosa else Color(0xFF263259)
+                        )
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            // Explicação detalhada e simples de cada modo
+            val explicacaoModo = when (modoVoz) {
+                ModoVoz.AUTOMATICO -> "Automático (Recomendado): O app analisa o modelo atual. Se ele aceitar áudio direto, envia a gravação; se for apenas texto, o celular converte sua voz em texto antes de enviar."
+                ModoVoz.NATIVO -> "Nativo do Android: O celular converte sua voz em texto no próprio aparelho antes de enviar à IA. Funciona com qualquer modelo e economiza dados móveis."
+                ModoVoz.IA_AUDIO -> "Direto para a IA: O áudio da sua gravação é enviado diretamente para a IA (ex: Gemini Flash). Oferece respostas mais naturais e percebe entonação, mas exige modelo compatível com áudio."
+            }
+
+            Surface(
+                color = Color(0xFF080C1A),
+                shape = RoundedCornerShape(8.dp),
+                border = BorderStroke(1.dp, Color(0xFF1E284A)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = explicacaoModo,
+                    color = TextoExplicativo,
+                    style = MaterialTheme.typography.bodySmall,
+                    lineHeight = 16.sp,
+                    modifier = Modifier.padding(10.dp)
+                )
+            }
+
+            // Item 2: Modelo aceita áudio direto (multimodal)
+            if (modeloVozAtual.isNotBlank()) {
+                Spacer(modifier = Modifier.height(14.dp))
+                HorizontalDivider(color = Color(0xFF1E284A), thickness = 1.dp)
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Switch(
+                        checked = modeloAceitaAudio,
+                        onCheckedChange = { aceita ->
+                            modeloAceitaAudio = aceita
+                            MapaMultimodal.marcarAceitaAudio(contexto, modeloVozAtual, aceita)
+                        },
+                        colors = coresInterruptor()
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Este modelo aceita áudio direto",
+                            fontWeight = FontWeight.SemiBold,
+                            color = TextoPrimario,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Text(
+                            text = "Modelo: $modeloVozAtual",
+                            color = NeonRosa,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "O modo Automático usa esta informação para saber se pode mandar o áudio bruto gravado ou se deve transcrever antes.",
+                    color = TextoApoio,
+                    style = MaterialTheme.typography.bodySmall,
+                    lineHeight = 16.sp
+                )
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+            HorizontalDivider(color = Color(0xFF1E284A), thickness = 1.dp)
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Item 3: Efeitos sonoros neon
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Switch(
+                    checked = sonsAtivos,
+                    onCheckedChange = { ativos ->
+                        sonsAtivos = ativos
+                        Configuracoes.salvarSonsAtivos(contexto, ativos)
+                    },
+                    colors = coresInterruptor()
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(
+                    text = "Efeitos sonoros neon",
+                    fontWeight = FontWeight.SemiBold,
+                    color = TextoPrimario,
+                    style = MaterialTheme.typography.bodyMedium
+                )
             }
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "O modo Automático usa esta marcação para decidir entre IA e nativo.",
-                color = TextoSecundario,
-                style = MaterialTheme.typography.bodySmall
+                text = "Toca bips sonoros suaves estilo sci-fi ao tocar nos botões de envio e ao acionar o microfone.",
+                color = TextoApoio,
+                style = MaterialTheme.typography.bodySmall,
+                lineHeight = 16.sp
             )
+        }
+
+        Spacer(modifier = Modifier.height(18.dp))
+
+        // ════════════════════════════════════════════════════
+        // CARD 4: PESQUISA NA INTERNET E CHECAGEM GOOGLE
+        // ════════════════════════════════════════════════════
+        CardSecao(
+            icone = "🌐",
+            titulo = "4. Pesquisa na Internet e Fatos",
+            subtitulo = "Permite ao Blér navegar na web em tempo real para responder sobre notícias recentes e acontecimentos do mundo.",
+            corDestaque = NeonAzul
+        ) {
+            // Destaque explicativo sobre a busca gratuita
+            Surface(
+                color = Color(0xFF081C15),
+                shape = RoundedCornerShape(8.dp),
+                border = BorderStroke(1.dp, Color(0xFF1B5E20)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(10.dp)) {
+                    Text(
+                        text = "✓ Pesquisa web gratuita e ilimitada inclusa",
+                        color = Color(0xFF69F0AE),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "O Blér já consulta automaticamente fontes abertas (DuckDuckGo, Bing, Wikipedia, SearXNG) sem custos. As chaves abaixo são 100% opcionais para quem quiser motores adicionais.",
+                        color = Color(0xFFC8E6C9),
+                        fontSize = 11.sp,
+                        lineHeight = 15.sp
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Campo Tavily
+            Text(
+                text = "Chave da Tavily (Opcional):",
+                fontWeight = FontWeight.SemiBold,
+                color = TextoPrimario,
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = "Buscador especializado para IAs. Fornece resultados mais limpos e rápidos.",
+                color = TextoApoio,
+                style = MaterialTheme.typography.bodySmall,
+                fontSize = 11.sp
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            var chaveTavily by remember { mutableStateOf(Configuracoes.obterChaveTavily(contexto)) }
+            OutlinedTextField(
+                value = chaveTavily,
+                onValueChange = { valor ->
+                    chaveTavily = valor
+                    Configuracoes.salvarChaveTavily(contexto, valor)
+                },
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text("Cole aqui sua chave (ex: tvly-...)", color = TextoPlaceholder) },
+                singleLine = true,
+                colors = coresCampoTexto()
+            )
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Campo Brave Search
+            Text(
+                text = "Chave da Brave Search (Opcional):",
+                fontWeight = FontWeight.SemiBold,
+                color = TextoPrimario,
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = "Índice de busca independente da Brave. Aumenta a velocidade e a cobertura de resultados.",
+                color = TextoApoio,
+                style = MaterialTheme.typography.bodySmall,
+                fontSize = 11.sp
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            var chaveBrave by remember { mutableStateOf(Configuracoes.obterChaveBrave(contexto)) }
+            OutlinedTextField(
+                value = chaveBrave,
+                onValueChange = { valor ->
+                    chaveBrave = valor
+                    Configuracoes.salvarChaveBrave(contexto, valor)
+                },
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text("Cole aqui sua chave (ex: BSA...)", color = TextoPlaceholder) },
+                singleLine = true,
+                colors = coresCampoTexto()
+            )
+
+            Spacer(modifier = Modifier.height(14.dp))
+            HorizontalDivider(color = Color(0xFF1E284A), thickness = 1.dp)
             Spacer(modifier = Modifier.height(12.dp))
-        }
 
-        Text(text = "Efeitos sonoros:", color = TextoSecundario, style = MaterialTheme.typography.bodyMedium)
-        Spacer(modifier = Modifier.height(4.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Switch(
-                checked = sonsAtivos,
-                onCheckedChange = { ativos ->
-                    sonsAtivos = ativos
-                    Configuracoes.salvarSonsAtivos(contexto, ativos)
+            // Switch Grounding Google
+            var confirmacaoGoogle by remember { mutableStateOf(Configuracoes.usarConfirmacaoGoogle(contexto)) }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Switch(
+                    checked = confirmacaoGoogle,
+                    onCheckedChange = { ativa ->
+                        confirmacaoGoogle = ativa
+                        Configuracoes.salvarConfirmacaoGoogle(contexto, ativa)
+                    },
+                    colors = coresInterruptor()
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Confirmar fatos recentes no Google",
+                        fontWeight = FontWeight.SemiBold,
+                        color = TextoPrimario,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Text(
+                        text = "Usa sua chave Gemini cadastrada",
+                        color = NeonAzul,
+                        fontSize = 11.sp
+                    )
                 }
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Para notícias do dia, placares de futebol ou cotações de moedas, o Blér faz 1 checagem em tempo real no Google antes de responder, evitando dados desatualizados.",
+                color = TextoApoio,
+                style = MaterialTheme.typography.bodySmall,
+                lineHeight = 16.sp
             )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text("Sons neon em botões e microfone")
         }
 
         Spacer(modifier = Modifier.height(24.dp))
 
         // ════════════════════════════════════════════════════
-        // SEÇÃO: BUSCA NA INTERNET
+        // BOTÃO INFERIOR: VOLTAR PARA O CHAT
         // ════════════════════════════════════════════════════
-        Text(text = "Busca na internet", style = MaterialTheme.typography.titleMedium)
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            text = "Sem as chaves abaixo, a busca usa fontes abertas " +
-                "(DuckDuckGo, Bing, Mojeek, SearXNG, Wikipedia). " +
-                "Com as chaves, a busca fica mais estável e completa.",
-            color = TextoSecundario,
-            style = MaterialTheme.typography.bodySmall
-        )
-        Spacer(modifier = Modifier.height(12.dp))
-
-        Text(text = "Chave da Tavily (opcional):", color = TextoSecundario, style = MaterialTheme.typography.bodyMedium)
-        Spacer(modifier = Modifier.height(4.dp))
-        var chaveTavily by remember { mutableStateOf(Configuracoes.obterChaveTavily(contexto)) }
-        OutlinedTextField(
-            value = chaveTavily,
-            onValueChange = { valor ->
-                chaveTavily = valor
-                Configuracoes.salvarChaveTavily(contexto, valor)
-            },
-            modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text("tvly-...") }
-        )
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        Text(text = "Chave da Brave Search (opcional):", color = TextoSecundario, style = MaterialTheme.typography.bodyMedium)
-        Spacer(modifier = Modifier.height(4.dp))
-        var chaveBrave by remember { mutableStateOf(Configuracoes.obterChaveBrave(contexto)) }
-        OutlinedTextField(
-            value = chaveBrave,
-            onValueChange = { valor ->
-                chaveBrave = valor
-                Configuracoes.salvarChaveBrave(contexto, valor)
-            },
-            modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text("BSA...") }
-        )
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        var confirmacaoGoogle by remember { mutableStateOf(Configuracoes.usarConfirmacaoGoogle(contexto)) }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Switch(
-                checked = confirmacaoGoogle,
-                onCheckedChange = { ativa ->
-                    confirmacaoGoogle = ativa
-                    Configuracoes.salvarConfirmacaoGoogle(contexto, ativa)
-                }
+        Button(
+            onClick = aoVoltar,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp),
+            shape = RoundedCornerShape(12.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = NeonAzul,
+                contentColor = Color(0xFF04060B)
             )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text("Confirmar fatos atuais com o Google (usa sua chave Gemini)")
-        }
-        Text(
-            text = "Para perguntas sensíveis ao tempo (notícias, placares, " +
-                "cotações), o Blér faz 1 verificação extra no Google antes " +
-                "de responder, para evitar dados desatualizados.",
-            color = TextoSecundario,
-            style = MaterialTheme.typography.bodySmall
-        )
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        Button(onClick = aoVoltar) {
-            Text("Voltar para o chat")
+        ) {
+            Text(
+                text = "✓ Voltar para o chat",
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp
+            )
         }
 
-        // ── Linha neon fina na base ──
         Spacer(modifier = Modifier.height(16.dp))
+
+        // ── Linha neon na base ──
         Canvas(modifier = Modifier.fillMaxWidth().height(2.dp)) {
             drawLine(
                 brush = Brush.horizontalGradient(listOf(NeonRosa, NeonLilas, NeonAzul)),
@@ -320,6 +649,8 @@ fun TelaConfiguracoes(aoVoltar: () -> Unit) {
                 strokeWidth = 2f
             )
         }
+
+        Spacer(modifier = Modifier.height(16.dp))
     }
 }
 
@@ -349,121 +680,189 @@ private fun BlocoProvedorIA(
         mutableStateOf(Configuracoes.obterModelosProvedor(contexto, nomeProvedor, legado))
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp)
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF0A0E1F)),
+        border = BorderStroke(1.dp, if (ativo) Color(0xFF2E3D6B) else Color(0xFF1B233D))
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Switch(
-                checked = ativo,
-                onCheckedChange = { valor ->
-                    ativo = valor
-                    Configuracoes.salvarProvedorAtivoNaCascata(contexto, nomeProvedor, valor)
+        Column(modifier = Modifier.padding(12.dp)) {
+            // Linha superior: Switch, Nome do Provedor, Campo de Prioridade, Botão Remover
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Switch(
+                    checked = ativo,
+                    onCheckedChange = { valor ->
+                        ativo = valor
+                        Configuracoes.salvarProvedorAtivoNaCascata(contexto, nomeProvedor, valor)
+                    },
+                    colors = coresInterruptor()
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = nomeProvedor,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = if (ativo) Color.White else TextoDesativado
+                    )
+                    Text(
+                        text = if (ativo) "Ativo na cascata" else "Pausado (ignorado)",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (ativo) VerdeStatus else TextoDesativado,
+                        fontSize = 11.sp
+                    )
                 }
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(text = nomeProvedor, modifier = Modifier.weight(1f))
-            OutlinedTextField(
-                value = prioridadeTexto,
-                onValueChange = { valor ->
-                    prioridadeTexto = valor.filter { it.isDigit() }.take(2)
-                    prioridadeTexto.toIntOrNull()?.let {
-                        Configuracoes.salvarPrioridadeProvedor(contexto, nomeProvedor, it)
+                Spacer(modifier = Modifier.width(8.dp))
+                Column(horizontalAlignment = Alignment.End) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "Ordem:",
+                            color = TextoApoio,
+                            fontSize = 12.sp,
+                            modifier = Modifier.padding(end = 4.dp)
+                        )
+                        OutlinedTextField(
+                            value = prioridadeTexto,
+                            onValueChange = { valor ->
+                                prioridadeTexto = valor.filter { it.isDigit() }.take(2)
+                                prioridadeTexto.toIntOrNull()?.let {
+                                    Configuracoes.salvarPrioridadeProvedor(contexto, nomeProvedor, it)
+                                }
+                            },
+                            enabled = ativo,
+                            modifier = Modifier.width(56.dp),
+                            textStyle = MaterialTheme.typography.bodyMedium.copy(
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold
+                            ),
+                            placeholder = { Text("1", color = TextoPlaceholder) },
+                            singleLine = true,
+                            colors = coresCampoTexto()
+                        )
                     }
+                    Text(
+                        text = "(1 tenta 1º)",
+                        color = TextoApoio,
+                        fontSize = 10.sp
+                    )
+                }
+                IconButton(onClick = aoRemover) {
+                    Text("✕", color = NeonRosa, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Campo de chave de API
+            Text(
+                text = "Chave de API do $nomeProvedor:",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = if (ativo) Color(0xFFF1F5F9) else TextoDesativado
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = "Sua chave de acesso privada (armazenada apenas no seu celular).",
+                style = MaterialTheme.typography.bodySmall,
+                color = TextoApoio,
+                fontSize = 11.sp
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            OutlinedTextField(
+                value = chave,
+                onValueChange = { valor ->
+                    chave = valor
+                    Configuracoes.salvarChaveDoProvedor(contexto, nomeProvedor, valor)
                 },
                 enabled = ativo,
-                modifier = Modifier.width(80.dp),
-                placeholder = { Text("Nº") }
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text("Cole a chave do $nomeProvedor...", color = TextoPlaceholder) },
+                singleLine = true,
+                colors = coresCampoTexto()
             )
-            TextButton(onClick = aoRemover) {
-                Text("✕", color = NeonRosa)
-            }
-        }
 
-        Spacer(modifier = Modifier.height(6.dp))
-
-        OutlinedTextField(
-            value = chave,
-            onValueChange = { valor ->
-                chave = valor
-                Configuracoes.salvarChaveDoProvedor(contexto, nomeProvedor, valor)
-            },
-            enabled = ativo,
-            modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text("Cole a chave de API do $nomeProvedor...") }
-        )
-
-        if (ativo) {
-            val escopo = rememberCoroutineScope()
-            var modelosOpenRouter by remember {
-                mutableStateOf(
-                    if (nomeProvedor == "OpenRouter") RepositorioModelosOpenRouter.lerCacheLocal(contexto) else emptyList()
-                )
-            }
-            var carregandoModelos by remember { mutableStateOf(false) }
-
-            LaunchedEffect(nomeProvedor) {
-                if (nomeProvedor == "OpenRouter" && RepositorioModelosOpenRouter.precisaAtualizar(contexto)) {
-                    carregandoModelos = true
-                    modelosOpenRouter = RepositorioModelosOpenRouter.buscarAoVivo(contexto)
-                    carregandoModelos = false
+            if (ativo) {
+                val escopo = rememberCoroutineScope()
+                var modelosOpenRouter by remember {
+                    mutableStateOf(
+                        if (nomeProvedor == "OpenRouter") RepositorioModelosOpenRouter.lerCacheLocal(contexto) else emptyList()
+                    )
                 }
-            }
+                var carregandoModelos by remember { mutableStateOf(false) }
 
-            val aoAtualizarModelos: (() -> Unit)? = if (nomeProvedor == "OpenRouter") {
-                {
-                    escopo.launch {
+                LaunchedEffect(nomeProvedor) {
+                    if (nomeProvedor == "OpenRouter" && RepositorioModelosOpenRouter.precisaAtualizar(contexto)) {
                         carregandoModelos = true
                         modelosOpenRouter = RepositorioModelosOpenRouter.buscarAoVivo(contexto)
                         carregandoModelos = false
                     }
                 }
-            } else null
 
-            val sugestoes: List<SugestaoModelo> = if (nomeProvedor == "OpenRouter") {
-                modelosOpenRouter.map { SugestaoModelo(it.id, it.nome, it.ehGratuito) }
-            } else {
-                MODELOS_POR_PROVEDOR[nomeProvedor] ?: emptyList()
-            }
+                val aoAtualizarModelos: (() -> Unit)? = if (nomeProvedor == "OpenRouter") {
+                    {
+                        escopo.launch {
+                            carregandoModelos = true
+                            modelosOpenRouter = RepositorioModelosOpenRouter.buscarAoVivo(contexto)
+                            carregandoModelos = false
+                        }
+                    }
+                } else null
 
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = "Selecione os modelos:",
-                    color = TextoSecundario,
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.weight(1f)
-                )
-                if (nomeProvedor == "OpenRouter") {
-                    TextButton(
-                        onClick = { aoAtualizarModelos?.invoke() },
-                        enabled = !carregandoModelos
-                    ) {
+                val sugestoes: List<SugestaoModelo> = if (nomeProvedor == "OpenRouter") {
+                    modelosOpenRouter.map { SugestaoModelo(it.id, it.nome, it.ehGratuito) }
+                } else {
+                    MODELOS_POR_PROVEDOR[nomeProvedor] ?: emptyList()
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = if (carregandoModelos) "Atualizando..." else "↻ Atualizar da web",
-                            color = NeonAzul,
-                            fontSize = 12.sp
+                            text = "Modelos a consultar:",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFFF1F5F9)
+                        )
+                        Text(
+                            text = "Ordem de tentativa se a anterior der erro ou limite.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextoApoio,
+                            fontSize = 11.sp
                         )
                     }
+                    if (nomeProvedor == "OpenRouter") {
+                        TextButton(
+                            onClick = { aoAtualizarModelos?.invoke() },
+                            enabled = !carregandoModelos
+                        ) {
+                            Text(
+                                text = if (carregandoModelos) "Atualizando..." else "↻ Atualizar da web",
+                                color = NeonAzul,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
                 }
+                Spacer(modifier = Modifier.height(6.dp))
+                SeletorModelosIA(
+                    sugestoes = sugestoes,
+                    selecionados = modelosSelecionados,
+                    onChange = { novaLista ->
+                        modelosSelecionados = novaLista
+                        Configuracoes.salvarModelosProvedor(contexto, nomeProvedor, novaLista)
+                    },
+                    carregando = carregandoModelos,
+                    aoAtualizar = aoAtualizarModelos
+                )
             }
-            Spacer(modifier = Modifier.height(4.dp))
-            SeletorModelosIA(
-                sugestoes = sugestoes,
-                selecionados = modelosSelecionados,
-                onChange = { novaLista ->
-                    modelosSelecionados = novaLista
-                    Configuracoes.salvarModelosProvedor(contexto, nomeProvedor, novaLista)
-                },
-                carregando = carregandoModelos,
-                aoAtualizar = aoAtualizarModelos
-            )
         }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AdicionarProvedorBotao(
     disponiveis: List<String>,
@@ -471,13 +870,31 @@ private fun AdicionarProvedorBotao(
 ) {
     var menuAberto by remember { mutableStateOf(false) }
     Box {
-        OutlinedButton(onClick = { menuAberto = true }) {
-            Text("+ Adicionar provedor")
+        OutlinedButton(
+            onClick = { menuAberto = true },
+            border = BorderStroke(1.dp, NeonAzul.copy(alpha = 0.8f)),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = NeonAzul)
+        ) {
+            Text(
+                text = "+ Adicionar provedor",
+                fontWeight = FontWeight.Bold,
+                color = NeonAzul
+            )
         }
-        DropdownMenu(expanded = menuAberto, onDismissRequest = { menuAberto = false }) {
+        DropdownMenu(
+            expanded = menuAberto,
+            onDismissRequest = { menuAberto = false },
+            modifier = Modifier.background(Color(0xFF0D1224))
+        ) {
             disponiveis.forEach { provedor ->
                 DropdownMenuItem(
-                    text = { Text(provedor) },
+                    text = {
+                        Text(
+                            text = provedor,
+                            color = Color.White,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    },
                     onClick = {
                         menuAberto = false
                         aoAdicionar(provedor)
@@ -490,7 +907,7 @@ private fun AdicionarProvedorBotao(
 
 /**
  * Campo único "Buscar ou selecionar modelo...": ao digitar, o dropdown
- * filtra as sugestões em tempo real; dá para marcar mais de um modelo
+ * filtra as sugestões em tempo real SEM fechar o teclado; dá para marcar mais de um modelo
  * e também adicionar um nome que não está na lista. Os selecionados
  * viram chips numerados (ordem de tentativa) com toque para remover.
  */
@@ -523,7 +940,9 @@ private fun SeletorModelosIA(
                 menuAberto = true
             },
             modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text("Buscar ou selecionar modelo...") },
+            placeholder = { Text("Buscar ou selecionar modelo...", color = TextoPlaceholder) },
+            singleLine = true,
+            colors = coresCampoTexto(),
             trailingIcon = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (carregando) {
@@ -542,7 +961,12 @@ private fun SeletorModelosIA(
                         }
                         Spacer(modifier = Modifier.width(4.dp))
                     }
-                    Text(text = "${selecionados.size} ✓", color = TextoSecundario, fontSize = 12.sp)
+                    Text(
+                        text = "${selecionados.size} ativo(s)",
+                        color = if (selecionados.isNotEmpty()) NeonAzul else TextoApoio,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
                     Spacer(modifier = Modifier.width(8.dp))
                 }
             }
@@ -558,10 +982,17 @@ private fun SeletorModelosIA(
             modifier = Modifier
                 .fillMaxWidth(0.92f)
                 .heightIn(max = 280.dp)
+                .background(Color(0xFF0D1224))
         ) {
             if (podeAdicionarManual) {
                 DropdownMenuItem(
-                    text = { Text("Adicionar \"$texto\"") },
+                    text = {
+                        Text(
+                            text = "+ Adicionar \"$texto\"",
+                            color = NeonAzul,
+                            fontWeight = FontWeight.Bold
+                        )
+                    },
                     onClick = {
                         onChange(selecionados + texto)
                         consulta = ""
@@ -580,13 +1011,15 @@ private fun SeletorModelosIA(
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     text = item.id,
-                                    style = MaterialTheme.typography.bodyMedium
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = Color(0xFFF8FAFC),
+                                    fontWeight = FontWeight.Medium
                                 )
                                 if (item.nomeExibicao.isNotBlank() && item.nomeExibicao != item.id) {
                                     Text(
                                         text = item.nomeExibicao,
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = TextoSecundario,
+                                        color = TextoExplicativo,
                                         maxLines = 1
                                     )
                                 }
@@ -601,6 +1034,7 @@ private fun SeletorModelosIA(
                                         text = "GRÁTIS",
                                         color = Color(0xFF69F0AE),
                                         fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
                                         modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
                                     )
                                 }
@@ -619,7 +1053,7 @@ private fun SeletorModelosIA(
                     text = {
                         Text(
                             text = "Mais ${filtradas.size - 40} modelos... Digite para filtrar",
-                            color = TextoSecundario,
+                            color = TextoApoio,
                             fontSize = 12.sp
                         )
                     },
@@ -628,7 +1062,7 @@ private fun SeletorModelosIA(
             }
             if (filtradas.isEmpty() && !podeAdicionarManual && texto.isNotBlank()) {
                 DropdownMenuItem(
-                    text = { Text("Nenhum modelo encontrado", color = TextoSecundario) },
+                    text = { Text("Nenhum modelo encontrado", color = TextoApoio) },
                     onClick = { menuAberto = false }
                 )
             }
@@ -636,19 +1070,34 @@ private fun SeletorModelosIA(
     }
 
     if (selecionados.isNotEmpty()) {
-        Spacer(modifier = Modifier.height(6.dp))
+        Spacer(modifier = Modifier.height(8.dp))
         Text(
-            text = "Ordem de tentativa (toque para remover):",
-            color = TextoSecundario,
-            style = MaterialTheme.typography.bodySmall
+            text = "Ordem de tentativa (toque em um modelo para remover):",
+            color = TextoExplicativo,
+            style = MaterialTheme.typography.bodySmall,
+            fontSize = 11.sp
         )
-        Spacer(modifier = Modifier.height(4.dp))
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Spacer(modifier = Modifier.height(6.dp))
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
             selecionados.forEachIndexed { indice, modelo ->
                 FilterChip(
                     selected = true,
                     onClick = { onChange(selecionados.filterIndexed { i, _ -> i != indice }) },
-                    label = { Text("${indice + 1}. $modelo ✕") }
+                    label = {
+                        Text(
+                            text = "${indice + 1}º $modelo ✕",
+                            color = Color(0xFFF8FAFC),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = Color(0xFF182245)
+                    ),
+                    border = BorderStroke(1.dp, NeonAzul.copy(alpha = 0.7f))
                 )
             }
         }

@@ -602,25 +602,27 @@ fun TelaDeChat(aoAbrirConfig: () -> Unit) {
         }
     }
 
-    // ── Ao abrir o app: restaura a última conversa aberta,
-    //    ou cria uma nova se não houver nenhuma salva ──
+    // ── Ao abrir o app: sempre inicia em uma conversa nova em branco,
+    //    preservando todo o histórico anterior no menu lateral ──
     LaunchedEffect(Unit) {
         val dao = db.agenteDao()
-        val idSalvo = Configuracoes.obterUltimaConversa(contexto)
-        val conversaSalva = idSalvo?.let { dao.buscarConversaPorId(it) }
-
-        if (conversaSalva != null) {
-            conversaAtualId = conversaSalva.id
-            mensagens = dao.listarMensagensDaConversa(conversaSalva.id)
-        } else {
-            val novaId = dao.criarConversa(
-                ConversaEntity(titulo = "Nova conversa", dataCriacao = System.currentTimeMillis())
-            )
-            conversaAtualId = novaId.toInt()
-            textoDigitado = ""
-            mensagens = emptyList()
-            Configuracoes.salvarUltimaConversa(contexto, novaId.toInt())
+        // Reaproveita uma conversa vazia existente ou cria uma nova
+        val conversaVazia = dao.listarConversas().firstOrNull { conversa ->
+            dao.listarMensagensDaConversa(conversa.id).isEmpty()
         }
+
+        val idFinal = if (conversaVazia != null) {
+            conversaVazia.id
+        } else {
+            dao.criarConversa(
+                ConversaEntity(titulo = "Nova conversa", dataCriacao = System.currentTimeMillis())
+            ).toInt()
+        }
+
+        conversaAtualId = idFinal
+        textoDigitado = ""
+        mensagens = emptyList()
+        Configuracoes.salvarUltimaConversa(contexto, idFinal)
         carregarConversas()
     }
 
