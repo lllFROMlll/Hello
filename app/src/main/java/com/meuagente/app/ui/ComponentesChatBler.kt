@@ -328,21 +328,38 @@ fun BolhaMensagem(
                     modifier = Modifier.align(Alignment.End)
                 ) {
                     if (!enviada && origemIA != null) {
-                        Box(
-                            modifier = Modifier
-                                .size(7.dp)
-                                .background(
-                                    color = corOrigemIA(origemIA),
-                                    shape = androidx.compose.foundation.shape.CircleShape
+                        val ehErro = origemIA.startsWith("Erro", ignoreCase = true)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null
+                            ) { mostrarDetalheOrigem = !mostrarDetalheOrigem }
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(if (ehErro) 8.dp else 7.dp)
+                                    .background(
+                                        color = corOrigemIA(origemIA),
+                                        shape = androidx.compose.foundation.shape.CircleShape
+                                    )
+                            )
+                            if (ehErro) {
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = if (mostrarDetalheOrigem) "ocultar" else "detalhes",
+                                    color = Color(0xFFFF8A80),
+                                    fontSize = 11.sp
                                 )
-                                .clickable(
-                                    interactionSource = remember { MutableInteractionSource() },
-                                    indication = null
-                                ) { mostrarDetalheOrigem = !mostrarDetalheOrigem }
-                        )
+                            }
+                        }
                         Spacer(modifier = Modifier.width(6.dp))
                         if (mostrarDetalheOrigem) {
-                            Text(text = origemIA, color = BlerTextoHora, fontSize = 10.sp)
+                            Text(
+                                text = origemIA,
+                                color = if (ehErro) Color(0xFFFF8A80) else BlerTextoHora,
+                                fontSize = 10.sp
+                            )
                             Spacer(modifier = Modifier.width(6.dp))
                         }
                     }
@@ -358,8 +375,10 @@ fun BolhaMensagem(
 }
 
 private fun corOrigemIA(origem: String): Color = when {
+    origem.startsWith("Erro", ignoreCase = true) -> Color(0xFFFF5252)
     origem.startsWith("Gemini", ignoreCase = true) -> Color(0xFF3B82F6)
     origem.startsWith("OpenRouter", ignoreCase = true) -> Color(0xFFEF4444)
+    origem.startsWith("OpenAI", ignoreCase = true) -> Color(0xFF10A37F)
     origem.startsWith("9Router", ignoreCase = true) -> Color(0xFFEAB308)
     origem.startsWith("Local", ignoreCase = true) -> Color(0xFFF97316)
     else -> Color(0xFF94A3B8)

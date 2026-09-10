@@ -47,6 +47,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import com.meuagente.app.ia.CascataIA
 import com.meuagente.app.ia.FalhaIA
+import com.meuagente.app.ia.NenhumProvedorConfigurado
 import com.meuagente.app.ia.TodasFalharam
 import com.meuagente.app.ui.BarraDeEntrada
 import com.meuagente.app.ui.BlerFundoBase
@@ -109,7 +110,7 @@ private fun formatarHora(dataHora: Long): String =
     SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(dataHora))
 
 private fun nenhumProvedorConfigurado(contexto: android.content.Context): Boolean =
-    listOf("Gemini", "OpenRouter").none { provedor ->
+    listOf("Gemini", "OpenRouter", "OpenAI").none { provedor ->
         Configuracoes.obterProvedorAtivoNaCascata(contexto, provedor, padrao = provedor == "Gemini") &&
             Configuracoes.obterChaveDoProvedor(contexto, provedor).isNotBlank()
     }
@@ -463,14 +464,22 @@ fun TelaDeChat(aoAbrirConfig: () -> Unit) {
                     origensIA[novoId] = "${cascata.provedor} · ${cascata.modelo}"
                 } catch (e: FalhaIA.SemRede) {
                     carregando = false
-                    db.agenteDao().salvarMensagem(
+                    val idErro = db.agenteDao().salvarMensagem(
                         MensagemEntity(conversaId = idConversa, autor = "agente", texto = "Não consegui me conectar à internet agora. Tenta de novo em instantes.", dataHora = System.currentTimeMillis())
-                    )
+                    ).toInt()
+                    origensIA[idErro] = "Erro: Sem conexão com a internet"
                 } catch (e: TodasFalharam) {
                     carregando = false
-                    db.agenteDao().salvarMensagem(
+                    val idErro = db.agenteDao().salvarMensagem(
                         MensagemEntity(conversaId = idConversa, autor = "agente", texto = "Tentei de todas as formas responder agora e não consegui. Tenta de novo em instantes.", dataHora = System.currentTimeMillis())
-                    )
+                    ).toInt()
+                    origensIA[idErro] = "Erro: ${e.detalhes}"
+                } catch (e: NenhumProvedorConfigurado) {
+                    carregando = false
+                    val idErro = db.agenteDao().salvarMensagem(
+                        MensagemEntity(conversaId = idConversa, autor = "agente", texto = "Nenhum provedor de IA está ativo na cascata. Abra as Configurações, ligue um provedor e adicione pelo menos um modelo.", dataHora = System.currentTimeMillis())
+                    ).toInt()
+                    origensIA[idErro] = "Erro: Nenhum provedor ativo com chave"
                 }
             }
 

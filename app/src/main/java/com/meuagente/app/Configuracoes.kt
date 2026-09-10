@@ -181,6 +181,14 @@ object Configuracoes {
         if (salvo.isNotBlank()) {
             return salvo.split(",").map { it.trim() }.filter { it.isNotBlank() }
         }
-        return if (modeloLegado.isNotBlank()) listOf(modeloLegado) else emptyList()
+        if (modeloLegado.isNotBlank()) {
+            return listOf(modeloLegado)
+        }
+        return when (provedor) {
+            "Gemini" -> listOf("gemini-2.5-flash", "gemini-2.5-flash-lite")
+            "OpenRouter" -> listOf("openrouter/auto")
+            "OpenAI" -> listOf("gpt-4o-mini")
+            else -> emptyList()
+        }
     }
 }

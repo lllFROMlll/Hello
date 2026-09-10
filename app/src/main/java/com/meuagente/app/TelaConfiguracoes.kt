@@ -16,6 +16,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
+import androidx.compose.ui.window.PopupProperties
+import com.meuagente.app.ia.ModeloOpenRouter
+import com.meuagente.app.ia.RepositorioModelosOpenRouter
+import kotlinx.coroutines.launch
+
 // Cores neon do projeto Blér (mesmas do chat)
 private val NeonAzul = Color(0xFF00E5FF)
 private val NeonLilas = Color(0xFFB388FF)
@@ -28,35 +33,27 @@ private val TextoSecundario = Color(0xFFB8C0D0)
 // entram aqui quando forem implementados.
 private val PROVEDORES_CASCATA = listOf("Gemini", "OpenRouter", "OpenAI")
 
-// Modelos mais usados de cada provedor, como SUGESTÕES do campo de
-// busca. Nenhuma lista é fechada: sempre dá para digitar manualmente
-// qualquer modelo que não esteja aqui.
-private val MODELOS_POR_PROVEDOR: Map<String, List<String>> = mapOf(
+data class SugestaoModelo(
+    val id: String,
+    val nomeExibicao: String = id,
+    val ehGratuito: Boolean = false
+)
+
+// Modelos mais usados de cada provedor como sugestões rápidas.
+// O OpenRouter agora busca a lista completa ao vivo via API pública.
+private val MODELOS_POR_PROVEDOR: Map<String, List<SugestaoModelo>> = mapOf(
     "Gemini" to listOf(
-        "gemini-3.1-flash-lite",
-        "gemini-2.5-flash",
-        "gemini-2.5-flash-lite",
-        "gemini-2.5-pro",
-        "gemini-3.5-flash-lite",
-        "gemini-3.6-flash",
-        "gemini-3.1-pro"
+        SugestaoModelo("gemini-2.5-flash", "Gemini 2.5 Flash"),
+        SugestaoModelo("gemini-2.5-flash-lite", "Gemini 2.5 Flash-Lite"),
+        SugestaoModelo("gemini-2.5-pro", "Gemini 2.5 Pro"),
+        SugestaoModelo("gemini-3.1-flash-lite", "Gemini 3.1 Flash-Lite"),
+        SugestaoModelo("gemini-3.1-pro", "Gemini 3.1 Pro")
     ),
     "OpenAI" to listOf(
-        "gpt-4o-mini",
-        "gpt-4o",
-        "gpt-4.1",
-        "gpt-4.1-mini",
-        "o3-mini"
-    ),
-    "OpenRouter" to listOf(
-        "openrouter/auto",
-        "deepseek/deepseek-chat",
-        "meta-llama/llama-3.3-70b-instruct:free",
-        "qwen/qwen-2.5-72b-instruct:free",
-        "moonshotai/glm-4.6",
-        "openai/gpt-oss-120b:free",
-        "anthropic/claude-3.5-sonnet",
-        "google/gemini-2.5-flash"
+        SugestaoModelo("gpt-4o-mini", "GPT-4o mini"),
+        SugestaoModelo("gpt-4o", "GPT-4o"),
+        SugestaoModelo("gpt-4.1-mini", "GPT-4.1 mini"),
+        SugestaoModelo("o3-mini", "o3-mini")
     )
 )
 
@@ -398,16 +395,69 @@ private fun BlocoProvedorIA(
         )
 
         if (ativo) {
+            val escopo = rememberCoroutineScope()
+            var modelosOpenRouter by remember {
+                mutableStateOf(
+                    if (nomeProvedor == "OpenRouter") RepositorioModelosOpenRouter.lerCacheLocal(contexto) else emptyList()
+                )
+            }
+            var carregandoModelos by remember { mutableStateOf(false) }
+
+            LaunchedEffect(nomeProvedor) {
+                if (nomeProvedor == "OpenRouter" && RepositorioModelosOpenRouter.precisaAtualizar(contexto)) {
+                    carregandoModelos = true
+                    modelosOpenRouter = RepositorioModelosOpenRouter.buscarAoVivo(contexto)
+                    carregandoModelos = false
+                }
+            }
+
+            val aoAtualizarModelos: (() -> Unit)? = if (nomeProvedor == "OpenRouter") {
+                {
+                    escopo.launch {
+                        carregandoModelos = true
+                        modelosOpenRouter = RepositorioModelosOpenRouter.buscarAoVivo(contexto)
+                        carregandoModelos = false
+                    }
+                }
+            } else null
+
+            val sugestoes: List<SugestaoModelo> = if (nomeProvedor == "OpenRouter") {
+                modelosOpenRouter.map { SugestaoModelo(it.id, it.nome, it.ehGratuito) }
+            } else {
+                MODELOS_POR_PROVEDOR[nomeProvedor] ?: emptyList()
+            }
+
             Spacer(modifier = Modifier.height(8.dp))
-            Text(text = "Selecione os modelos:", color = TextoSecundario, style = MaterialTheme.typography.bodyMedium)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "Selecione os modelos:",
+                    color = TextoSecundario,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.weight(1f)
+                )
+                if (nomeProvedor == "OpenRouter") {
+                    TextButton(
+                        onClick = { aoAtualizarModelos?.invoke() },
+                        enabled = !carregandoModelos
+                    ) {
+                        Text(
+                            text = if (carregandoModelos) "Atualizando..." else "↻ Atualizar da web",
+                            color = NeonAzul,
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+            }
             Spacer(modifier = Modifier.height(4.dp))
             SeletorModelosIA(
-                sugestoes = MODELOS_POR_PROVEDOR[nomeProvedor] ?: emptyList(),
+                sugestoes = sugestoes,
                 selecionados = modelosSelecionados,
                 onChange = { novaLista ->
                     modelosSelecionados = novaLista
                     Configuracoes.salvarModelosProvedor(contexto, nomeProvedor, novaLista)
-                }
+                },
+                carregando = carregandoModelos,
+                aoAtualizar = aoAtualizarModelos
             )
         }
     }
@@ -447,22 +497,25 @@ private fun AdicionarProvedorBotao(
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun SeletorModelosIA(
-    sugestoes: List<String>,
+    sugestoes: List<SugestaoModelo>,
     selecionados: List<String>,
-    onChange: (List<String>) -> Unit
+    onChange: (List<String>) -> Unit,
+    carregando: Boolean = false,
+    aoAtualizar: (() -> Unit)? = null
 ) {
     var consulta by remember { mutableStateOf("") }
     var menuAberto by remember { mutableStateOf(false) }
 
     val texto = consulta.trim()
-    val filtradas = sugestoes.filter { sugestao ->
-        sugestao.contains(texto, ignoreCase = true) && !selecionados.contains(sugestao)
+    val filtradas = sugestoes.filter { item ->
+        (item.id.contains(texto, ignoreCase = true) || item.nomeExibicao.contains(texto, ignoreCase = true)) &&
+            !selecionados.contains(item.id)
     }
     val podeAdicionarManual = texto.isNotBlank() &&
         !selecionados.contains(texto) &&
-        !sugestoes.contains(texto)
+        sugestoes.none { it.id.equals(texto, ignoreCase = true) }
 
-    Box {
+    Box(modifier = Modifier.fillMaxWidth()) {
         OutlinedTextField(
             value = consulta,
             onValueChange = {
@@ -472,10 +525,40 @@ private fun SeletorModelosIA(
             modifier = Modifier.fillMaxWidth(),
             placeholder = { Text("Buscar ou selecionar modelo...") },
             trailingIcon = {
-                Text(text = "${selecionados.size} ✓", color = TextoSecundario, fontSize = 12.sp)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (carregando) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                            color = NeonAzul
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                    } else if (aoAtualizar != null) {
+                        IconButton(
+                            onClick = aoAtualizar,
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Text("↻", color = NeonAzul, fontSize = 16.sp)
+                        }
+                        Spacer(modifier = Modifier.width(4.dp))
+                    }
+                    Text(text = "${selecionados.size} ✓", color = TextoSecundario, fontSize = 12.sp)
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
             }
         )
-        DropdownMenu(expanded = menuAberto, onDismissRequest = { menuAberto = false }) {
+        DropdownMenu(
+            expanded = menuAberto && (filtradas.isNotEmpty() || podeAdicionarManual || (texto.isNotBlank() && filtradas.isEmpty())),
+            onDismissRequest = { menuAberto = false },
+            properties = PopupProperties(
+                focusable = false,
+                dismissOnBackPress = true,
+                dismissOnClickOutside = true
+            ),
+            modifier = Modifier
+                .fillMaxWidth(0.92f)
+                .heightIn(max = 280.dp)
+        ) {
             if (podeAdicionarManual) {
                 DropdownMenuItem(
                     text = { Text("Adicionar \"$texto\"") },
@@ -486,14 +569,61 @@ private fun SeletorModelosIA(
                     }
                 )
             }
-            filtradas.forEach { sugestao ->
+            val visiveis = filtradas.take(40)
+            visiveis.forEach { item ->
                 DropdownMenuItem(
-                    text = { Text(sugestao) },
+                    text = {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = item.id,
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                                if (item.nomeExibicao.isNotBlank() && item.nomeExibicao != item.id) {
+                                    Text(
+                                        text = item.nomeExibicao,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = TextoSecundario,
+                                        maxLines = 1
+                                    )
+                                }
+                            }
+                            if (item.ehGratuito) {
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Surface(
+                                    color = Color(0xFF1B5E20),
+                                    shape = MaterialTheme.shapes.extraSmall
+                                ) {
+                                    Text(
+                                        text = "GRÁTIS",
+                                        color = Color(0xFF69F0AE),
+                                        fontSize = 10.sp,
+                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                        }
+                    },
                     onClick = {
-                        onChange(selecionados + sugestao)
+                        onChange(selecionados + item.id)
                         consulta = ""
                         menuAberto = false
                     }
+                )
+            }
+            if (filtradas.size > 40) {
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            text = "Mais ${filtradas.size - 40} modelos... Digite para filtrar",
+                            color = TextoSecundario,
+                            fontSize = 12.sp
+                        )
+                    },
+                    onClick = { }
                 )
             }
             if (filtradas.isEmpty() && !podeAdicionarManual && texto.isNotBlank()) {

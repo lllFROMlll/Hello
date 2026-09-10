@@ -1,5 +1,6 @@
 package com.meuagente.app.ia
 
+import android.util.Log
 import com.meuagente.app.MensagemEntity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -20,15 +21,14 @@ import java.util.concurrent.TimeUnit
 class ProvedorFormatoOpenAI(
     override val nome: String,
     private val chaveApi: String,
-    private val baseUrl: String
+    private val baseUrl: String,
+    override val modelos: List<String> = emptyList()
 ) : ProvedorIA {
 
-    override val modelos: List<String> = emptyList()
-
     private val client = OkHttpClient.Builder()
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(15, TimeUnit.SECONDS)
-        .writeTimeout(15, TimeUnit.SECONDS)
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(45, TimeUnit.SECONDS)
+        .writeTimeout(30, TimeUnit.SECONDS)
         .build()
 
     override suspend fun perguntar(modelo: String, historico: List<MensagemEntity>, instrucao: String): String {
@@ -45,21 +45,28 @@ class ProvedorFormatoOpenAI(
                 .put("messages", mensagens)
 
             val corpo = corpoJson.toString().toRequestBody("application/json".toMediaType())
-            val request = Request.Builder()
+            val requestBuilder = Request.Builder()
                 .url("$baseUrl/chat/completions")
                 .addHeader("Authorization", "Bearer $chaveApi")
                 .post(corpo)
-                .build()
+
+            if (nome == "OpenRouter") {
+                requestBuilder.addHeader("HTTP-Referer", "https://meuagente.app")
+                requestBuilder.addHeader("X-Title", "MeuAgente")
+            }
+            val request = requestBuilder.build()
 
             try {
                 val resposta = client.newCall(request).execute()
                 val textoResposta = resposta.body?.string() ?: ""
 
                 if (!resposta.isSuccessful) {
+                    Log.e("ProvedorIA", "Provedor $nome com modelo '$modelo' falhou com HTTP ${resposta.code}: ${textoResposta.take(300)}")
                     throw GeminiProvider.classificarFalha(
                         resposta.code,
                         resposta.header("Retry-After"),
-                        textoResposta
+                        textoResposta,
+                        nome
                     )
                 }
 
@@ -69,6 +76,9 @@ class ProvedorFormatoOpenAI(
                     .getJSONObject("message")
                     .getString("content")
                     .ifBlank { throw FalhaIA.Indisponivel("resposta vazia de $nome") }
+            } catch (e: java.net.SocketTimeoutException) {
+                Log.w("ProvedorIA", "Provedor $nome com modelo '$modelo' estourou tempo limite de 45s: ${e.message}")
+                throw FalhaIA.Indisponivel("tempo limite de 45s esgotado no modelo $modelo")
             } catch (e: IOException) {
                 throw FalhaIA.SemRede
             } catch (e: FalhaIA) {

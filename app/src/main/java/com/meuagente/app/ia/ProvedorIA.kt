@@ -28,7 +28,7 @@ sealed class FalhaIA(mensagem: String) : Exception(mensagem) {
 object NenhumProvedorConfigurado : Exception("nenhum provedor configurado")
 
 /** Todos os provedores/modelos da cascata falharam. */
-object TodasFalharam : Exception("todos os provedores falharam")
+class TodasFalharam(val detalhes: String = "todos os provedores falharam") : Exception(detalhes)
 
 /**
  * Interface comum de provedores de IA (mesmo princípio do ProvedorBusca

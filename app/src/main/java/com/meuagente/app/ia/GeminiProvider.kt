@@ -1,5 +1,6 @@
 package com.meuagente.app.ia
 
+import android.util.Log
 import com.meuagente.app.MensagemEntity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -17,11 +18,12 @@ import java.util.concurrent.TimeUnit
  * chamarGemini, agora lançando FalhaIA classificada em vez de devolver
  * strings "Erro ...".
  */
-class GeminiProvider(private val chaveApi: String) : ProvedorIA {
+class GeminiProvider(
+    private val chaveApi: String,
+    override val modelos: List<String> = listOf("gemini-2.5-flash", "gemini-2.5-flash-lite")
+) : ProvedorIA {
 
     override val nome = "Gemini"
-
-    override val modelos: List<String> = listOf("gemini-2.5-flash-lite")
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
@@ -57,6 +59,7 @@ class GeminiProvider(private val chaveApi: String) : ProvedorIA {
                 val textoResposta = resposta.body?.string() ?: ""
 
                 if (!resposta.isSuccessful) {
+                    Log.e("ProvedorIA", "Gemini com modelo '$modelo' falhou com HTTP ${resposta.code}: ${textoResposta.take(300)}")
                     throw classificarFalha(resposta.code, resposta.header("Retry-After"), textoResposta)
                 }
 
@@ -79,9 +82,26 @@ class GeminiProvider(private val chaveApi: String) : ProvedorIA {
     }
 
     companion object {
-        fun classificarFalha(codigo: Int, retryAfter: String?, corpo: String): FalhaIA =
+        fun classificarFalha(codigo: Int, retryAfter: String?, corpo: String, nomeProvedor: String = ""): FalhaIA =
             when {
-                codigo == 429 -> FalhaIA.CotaEstourada(retryAfter?.trim()?.toLongOrNull())
+                codigo == 429 -> {
+                    val retrySegundos = retryAfter?.trim()?.toLongOrNull()
+                    if (retrySegundos != null && retrySegundos > 0) {
+                        FalhaIA.CotaEstourada(retrySegundos)
+                    } else {
+                        val regex = Regex("""(?i)(?:wait|retry|reset)(?:\s+in)?\s+(\d+)\s*(?:s|seg|second|sec)""").find(corpo)
+                        val segundosCorpo = regex?.groupValues?.get(1)?.toLongOrNull()
+                        if (segundosCorpo != null && segundosCorpo > 0) {
+                            FalhaIA.CotaEstourada(segundosCorpo)
+                        } else {
+                            val ehDiario = corpo.contains("day", ignoreCase = true) ||
+                                           corpo.contains("daily", ignoreCase = true) ||
+                                           nomeProvedor == "Gemini"
+                            val padrao = if (ehDiario) 24L * 3600 else 60L
+                            FalhaIA.CotaEstourada(padrao)
+                        }
+                    }
+                }
                 codigo == 401 || codigo == 403 -> FalhaIA.ChaveInvalida
                 codigo >= 500 -> FalhaIA.Indisponivel("HTTP $codigo")
                 else -> FalhaIA.Indisponivel("HTTP $codigo: ${corpo.take(200)}")
