@@ -1,5 +1,11 @@
 package com.meuagente.app
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -13,6 +19,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -106,40 +113,107 @@ private fun CardSecao(
     titulo: String,
     subtitulo: String,
     corDestaque: Color = NeonAzul,
+    expandido: Boolean = false,
+    aoAlternar: () -> Unit = {},
+    badgeResumo: String? = null,
+    corBadge: Color = VerdeStatus,
     conteudo: @Composable ColumnScope.() -> Unit
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp)),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = Color(0xFF10162D)),
-        border = BorderStroke(1.dp, Color(0xFF263359))
+        border = BorderStroke(
+            if (expandido) 1.5.dp else 1.dp,
+            if (expandido) corDestaque.copy(alpha = 0.7f) else Color(0xFF263359)
+        )
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            // Cabeçalho clicável do Acordeão
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { aoAlternar() }
+                    .padding(horizontal = 16.dp, vertical = 14.dp)
+            ) {
                 Text(
                     text = icone,
-                    fontSize = 20.sp,
-                    modifier = Modifier.padding(end = 8.dp)
+                    fontSize = 22.sp,
+                    modifier = Modifier.padding(end = 10.dp)
                 )
-                Text(
-                    text = titulo,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = corDestaque
-                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = titulo,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = if (expandido) corDestaque else Color.White
+                        )
+                        if (!badgeResumo.isNullOrBlank()) {
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = corBadge.copy(alpha = 0.15f),
+                                border = BorderStroke(1.dp, corBadge.copy(alpha = 0.5f))
+                            ) {
+                                Text(
+                                    text = badgeResumo,
+                                    color = corBadge,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = subtitulo,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextoExplicativo,
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                // Indicador de expansão (seta)
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = if (expandido) corDestaque.copy(alpha = 0.2f) else Color(0xFF1E284A),
+                    modifier = Modifier.size(28.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(
+                            text = if (expandido) "▲" else "▼",
+                            color = if (expandido) corDestaque else Color(0xFF94A3B8),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
             }
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = subtitulo,
-                style = MaterialTheme.typography.bodySmall,
-                color = TextoExplicativo,
-                lineHeight = 17.sp
-            )
-            Spacer(modifier = Modifier.height(14.dp))
-            conteudo()
+
+            // Conteúdo expandido com animação suave
+            AnimatedVisibility(
+                visible = expandido,
+                enter = expandVertically(animationSpec = tween(300)) + fadeIn(animationSpec = tween(300)),
+                exit = shrinkVertically(animationSpec = tween(250)) + fadeOut(animationSpec = tween(200))
+            ) {
+                Column(modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp)) {
+                    HorizontalDivider(color = Color(0xFF1E284A), thickness = 1.dp)
+                    Spacer(modifier = Modifier.height(14.dp))
+                    conteudo()
+                }
+            }
         }
     }
 }
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -174,6 +248,51 @@ fun TelaConfiguracoes(aoVoltar: () -> Unit) {
     }
     var mensagemModeloPadrao by remember { mutableStateOf("") }
 
+    // ── Estado do Acordeão: null = todas as seções recolhidas por padrão ──
+    var secaoAberta by remember { mutableStateOf<Int?>(null) }
+
+    // ── Ciclo de Vida e Diagnóstico Permanente das 4 Permissões (Nível Raiz) ──
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var cicloPermissao by remember { mutableStateOf(0) }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                cicloPermissao++
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
+    val launcherNotifConfig = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { _ ->
+        cicloPermissao++
+    }
+
+    val temNotificacao = remember(cicloPermissao) {
+        com.meuagente.app.lembretes.NotificadorLembrete.temPermissaoNotificacao(contexto)
+    }
+    val temAlarmeExato = remember(cicloPermissao) {
+        com.meuagente.app.lembretes.GerenciadorLembretes.podeAgendarAlarmesExatos(contexto)
+    }
+    val isentoBateria = remember(cicloPermissao) {
+        !com.meuagente.app.lembretes.GerenciadorBateria.precisaPedirIsencao(contexto)
+    }
+    val temSobreposicao = remember(cicloPermissao) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            android.provider.Settings.canDrawOverlays(contexto)
+        } else true
+    }
+
+    val totalPermissoesAtivas = (if (temNotificacao) 1 else 0) +
+            (if (temAlarmeExato) 1 else 0) +
+            (if (isentoBateria) 1 else 0) +
+            (if (temSobreposicao) 1 else 0)
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -206,7 +325,7 @@ fun TelaConfiguracoes(aoVoltar: () -> Unit) {
             )
         }
 
-        Spacer(modifier = Modifier.height(18.dp))
+        Spacer(modifier = Modifier.height(16.dp))
 
         // ════════════════════════════════════════════════════
         // CARD 1: CASCATA MULTI-MODELOS E PROVEDORES
@@ -214,8 +333,12 @@ fun TelaConfiguracoes(aoVoltar: () -> Unit) {
         CardSecao(
             icone = "🤖",
             titulo = "1. Provedores e Modelos de IA",
-            subtitulo = "Cadastre as IAs que o Blér pode consultar. Se a primeira falhar, esgotar a cota gratuita ou demorar para responder, o app pula automaticamente para a próxima.",
-            corDestaque = NeonAzul
+            subtitulo = "Cadastre as IAs que o Blér pode consultar e ordene os modelos da cascata.",
+            corDestaque = NeonAzul,
+            expandido = (secaoAberta == 1),
+            aoAlternar = { secaoAberta = if (secaoAberta == 1) null else 1 },
+            badgeResumo = "${provedoresConfigurados.size} IAs",
+            corBadge = NeonAzul
         ) {
             provedoresConfigurados.forEach { nomeProvedor ->
                 BlocoProvedorIA(
@@ -237,7 +360,7 @@ fun TelaConfiguracoes(aoVoltar: () -> Unit) {
             }
         }
 
-        Spacer(modifier = Modifier.height(18.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
         // ════════════════════════════════════════════════════
         // CARD 2: REGRAS DE FUNCIONAMENTO
@@ -245,8 +368,10 @@ fun TelaConfiguracoes(aoVoltar: () -> Unit) {
         CardSecao(
             icone = "⚡",
             titulo = "2. Regras de Funcionamento",
-            subtitulo = "Defina como o Blér decide qual inteligência artificial acionar para cada tipo de pergunta.",
-            corDestaque = NeonLilas
+            subtitulo = "Defina como o Blér decide qual inteligência acionar para cada tipo de pergunta.",
+            corDestaque = NeonLilas,
+            expandido = (secaoAberta == 2),
+            aoAlternar = { secaoAberta = if (secaoAberta == 2) null else 2 }
         ) {
             var autoCascata by remember { mutableStateOf(Configuracoes.obterAutoCascata(contexto)) }
 
@@ -336,7 +461,7 @@ fun TelaConfiguracoes(aoVoltar: () -> Unit) {
             }
         }
 
-        Spacer(modifier = Modifier.height(18.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
         // ════════════════════════════════════════════════════
         // CARD 3: COMANDO DE VOZ E ÁUDIO
@@ -345,7 +470,15 @@ fun TelaConfiguracoes(aoVoltar: () -> Unit) {
             icone = "🎙️",
             titulo = "3. Comando de Voz e Áudio",
             subtitulo = "Escolha como o microfone do celular ouve sua fala e processa suas instruções.",
-            corDestaque = NeonRosa
+            corDestaque = NeonRosa,
+            expandido = (secaoAberta == 3),
+            aoAlternar = { secaoAberta = if (secaoAberta == 3) null else 3 },
+            badgeResumo = when (modoVoz) {
+                ModoVoz.AUTOMATICO -> "Automático"
+                ModoVoz.NATIVO -> "Nativo"
+                ModoVoz.IA_AUDIO -> "Áudio IA"
+            },
+            corBadge = NeonRosa
         ) {
             // Item 1: Seletor de Modo de Voz
             Text(
@@ -488,7 +621,7 @@ fun TelaConfiguracoes(aoVoltar: () -> Unit) {
             )
         }
 
-        Spacer(modifier = Modifier.height(18.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
         // ════════════════════════════════════════════════════
         // CARD 4: PESQUISA NA INTERNET E CHECAGEM GOOGLE
@@ -496,8 +629,12 @@ fun TelaConfiguracoes(aoVoltar: () -> Unit) {
         CardSecao(
             icone = "🌐",
             titulo = "4. Pesquisa na Internet e Fatos",
-            subtitulo = "Permite ao Blér navegar na web em tempo real para responder sobre notícias recentes e acontecimentos do mundo.",
-            corDestaque = NeonAzul
+            subtitulo = "Permite ao Blér navegar na web em tempo real para responder sobre notícias recentes.",
+            corDestaque = NeonAzul,
+            expandido = (secaoAberta == 4),
+            aoAlternar = { secaoAberta = if (secaoAberta == 4) null else 4 },
+            badgeResumo = "Google Grátis",
+            corBadge = VerdeStatus
         ) {
             // Destaque explicativo sobre a busca gratuita
             Surface(
@@ -625,18 +762,68 @@ fun TelaConfiguracoes(aoVoltar: () -> Unit) {
             )
         }
 
-        Spacer(modifier = Modifier.height(18.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
         // ════════════════════════════════════════════════════
-        // CARD 5: LEMBRETES, ALARME E GOOGLE AGENDA
+        // CARD 5: LEMBRETES, ALARME E SEGUNDO PLANO
         // ════════════════════════════════════════════════════
         CardSecao(
             icone = "⏰",
-            titulo = "5. Lembretes, Alarmes e Diagnóstico",
-            subtitulo = "Configure a experiência dos seus lembretes e verifique o status das permissões vitais do Android para disparos pontuais no segundo exato.",
-            corDestaque = NeonLilas
+            titulo = "5. Lembretes, Alarmes & Segundo Plano",
+            subtitulo = "App ativo em 2º plano, sons, tela cheia e diagnóstico de permissões.",
+            corDestaque = NeonLilas,
+            expandido = (secaoAberta == 5),
+            aoAlternar = { secaoAberta = if (secaoAberta == 5) null else 5 },
+            badgeResumo = "$totalPermissoesAtivas/4 ativas",
+            corBadge = if (totalPermissoesAtivas == 4) VerdeStatus else Color(0xFFFFB74D)
         ) {
-            // Item 1: Tela cheia com gota d'água
+            // Item 0: Foreground Service (Serviço ativo em segundo plano)
+            var servicoAtivo by remember { mutableStateOf(Configuracoes.servicoSegundoPlanoAtivo(contexto)) }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Switch(
+                    checked = servicoAtivo,
+                    onCheckedChange = { ativa ->
+                        servicoAtivo = ativa
+                        Configuracoes.salvarServicoSegundoPlanoAtivo(contexto, ativa)
+                        if (ativa) {
+                            com.meuagente.app.lembretes.ServicoSegundoPlanoBler.iniciar(contexto)
+                        } else {
+                            com.meuagente.app.lembretes.ServicoSegundoPlanoBler.parar(contexto)
+                        }
+                    },
+                    colors = coresInterruptor()
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Manter Blér ativo em segundo plano",
+                        fontWeight = FontWeight.SemiBold,
+                        color = TextoPrimario,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Text(
+                        text = if (servicoAtivo) "Foreground Service ativo · Notificação na barra de status" else "Desativado · Sistema pode encerrar o app",
+                        color = if (servicoAtivo) VerdeStatus else TextoApoio,
+                        fontSize = 11.sp
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Mantém uma notificação fixa e discreta (como VPN e Spotify) para o Android nunca encerrar o Blér, garantindo 100% de pontualidade na entrega de lembretes e alarmes.",
+                color = TextoApoio,
+                style = MaterialTheme.typography.bodySmall,
+                lineHeight = 16.sp
+            )
+
+            Spacer(modifier = Modifier.height(14.dp))
+            HorizontalDivider(color = Color(0xFF1E284A), thickness = 1.dp)
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Item 1: Tela cheia com Orbe Quântico
             var usarTelaCheia by remember { mutableStateOf(Configuracoes.usarTelaCheiaLembrete(contexto)) }
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -653,7 +840,7 @@ fun TelaConfiguracoes(aoVoltar: () -> Unit) {
                 Spacer(modifier = Modifier.width(10.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Tela cheia com animação da gota",
+                        text = "Tela cheia com Orbe Quântico",
                         fontWeight = FontWeight.SemiBold,
                         color = TextoPrimario,
                         style = MaterialTheme.typography.bodyMedium
@@ -667,7 +854,7 @@ fun TelaConfiguracoes(aoVoltar: () -> Unit) {
             }
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "Ao tocar o alarme, abre a tela de prioridade máxima com a animação da gota d'água, resumo contextual e menu de adiamento. Se desativado, exibe apenas a notificação padrão do Android.",
+                text = "Ao tocar o alarme, abre a tela holográfica com o Orbe Quântico neon pulsante, resumo contextual da IA e relógio digital para adiamento. Se desativado, exibe apenas a notificação padrão do Android.",
                 color = TextoApoio,
                 style = MaterialTheme.typography.bodySmall,
                 lineHeight = 16.sp
@@ -749,43 +936,12 @@ fun TelaConfiguracoes(aoVoltar: () -> Unit) {
             )
             Spacer(modifier = Modifier.height(3.dp))
             Text(
-                text = "O Android exige 3 permissões específicas para tocar alarmes e acordar a tela:",
+                text = "O Android exige 4 permissões vitais para tocar alarmes e acordar a tela:",
                 color = TextoApoio,
                 fontSize = 11.sp,
                 lineHeight = 15.sp
             )
             Spacer(modifier = Modifier.height(10.dp))
-
-            val lifecycleOwner = LocalLifecycleOwner.current
-            var cicloPermissao by remember { mutableStateOf(0) }
-
-            DisposableEffect(lifecycleOwner) {
-                val observer = LifecycleEventObserver { _, event ->
-                    if (event == Lifecycle.Event.ON_RESUME) {
-                        cicloPermissao++
-                    }
-                }
-                lifecycleOwner.lifecycle.addObserver(observer)
-                onDispose {
-                    lifecycleOwner.lifecycle.removeObserver(observer)
-                }
-            }
-
-            val launcherNotifConfig = rememberLauncherForActivityResult(
-                ActivityResultContracts.RequestPermission()
-            ) { _ ->
-                cicloPermissao++
-            }
-
-            val temNotificacao = remember(cicloPermissao) {
-                com.meuagente.app.lembretes.NotificadorLembrete.temPermissaoNotificacao(contexto)
-            }
-            val temAlarmeExato = remember(cicloPermissao) {
-                com.meuagente.app.lembretes.GerenciadorLembretes.podeAgendarAlarmesExatos(contexto)
-            }
-            val isentoBateria = remember(cicloPermissao) {
-                !com.meuagente.app.lembretes.GerenciadorBateria.precisaPedirIsencao(contexto)
-            }
 
             // Permissão 1: Notificações
             Row(
@@ -936,13 +1092,7 @@ fun TelaConfiguracoes(aoVoltar: () -> Unit) {
             Spacer(modifier = Modifier.height(6.dp))
 
             // Permissão 4: Sobrepor a outros apps (SYSTEM_ALERT_WINDOW)
-            val podeSobrepor = remember(cicloPermissao) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                    android.provider.Settings.canDrawOverlays(contexto)
-                } else {
-                    true
-                }
-            }
+            val podeSobrepor = temSobreposicao
 
             Row(
                 verticalAlignment = Alignment.CenterVertically,

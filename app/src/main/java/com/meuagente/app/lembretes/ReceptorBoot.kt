@@ -14,6 +14,9 @@ class ReceptorBoot : BroadcastReceiver() {
             intent.action == Intent.ACTION_MY_PACKAGE_REPLACED
         ) {
             GerenciadorLembretes.reagendarTodosPendentes(context)
+            if (com.meuagente.app.Configuracoes.servicoSegundoPlanoAtivo(context)) {
+                ServicoSegundoPlanoBler.iniciar(context)
+            }
         }
     }
 }

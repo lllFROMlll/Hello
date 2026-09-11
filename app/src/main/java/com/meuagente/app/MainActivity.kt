@@ -79,6 +79,12 @@ private const val MAX_CONVERSAS_FIXADAS = 5
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Inicia o serviço em segundo plano (Foreground Service) se ativo nas preferências
+        if (Configuracoes.servicoSegundoPlanoAtivo(this)) {
+            com.meuagente.app.lembretes.ServicoSegundoPlanoBler.iniciar(this)
+        }
+
         setContent {
             MaterialTheme(colorScheme = darkColorScheme()) {
                 Surface(modifier = Modifier.fillMaxSize(), color = Color(0xFF05050F)) {

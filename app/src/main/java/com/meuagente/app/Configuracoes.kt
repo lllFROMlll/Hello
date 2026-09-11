@@ -247,4 +247,18 @@ object Configuracoes {
                 ?: android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_NOTIFICATION)
         }
     }
+
+    // ── Foreground Service (Serviço ativo em segundo plano) ──
+    private const val CHAVE_SERVICO_SEGUNDO_PLANO = "servico_segundo_plano_ativo"
+
+    fun salvarServicoSegundoPlanoAtivo(contexto: Context, ativo: Boolean) {
+        val prefs = contexto.getSharedPreferences(ARQUIVO, Context.MODE_PRIVATE)
+        prefs.edit().putBoolean(CHAVE_SERVICO_SEGUNDO_PLANO, ativo).apply()
+    }
+
+    fun servicoSegundoPlanoAtivo(contexto: Context): Boolean {
+        val prefs = contexto.getSharedPreferences(ARQUIVO, Context.MODE_PRIVATE)
+        return prefs.getBoolean(CHAVE_SERVICO_SEGUNDO_PLANO, true) // Padrão ativo para estabilidade máxima
+    }
 }
+
