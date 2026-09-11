@@ -3,6 +3,7 @@ package com.meuagente.app
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.rememberScrollState
@@ -20,6 +21,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.PopupProperties
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.widget.Toast
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import com.meuagente.app.ia.ModeloOpenRouter
 import com.meuagente.app.ia.RepositorioModelosOpenRouter
 import kotlinx.coroutines.launch
@@ -615,7 +625,565 @@ fun TelaConfiguracoes(aoVoltar: () -> Unit) {
             )
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(18.dp))
+
+        // ════════════════════════════════════════════════════
+        // CARD 5: LEMBRETES, ALARME E GOOGLE AGENDA
+        // ════════════════════════════════════════════════════
+        CardSecao(
+            icone = "⏰",
+            titulo = "5. Lembretes, Alarmes e Diagnóstico",
+            subtitulo = "Configure a experiência dos seus lembretes e verifique o status das permissões vitais do Android para disparos pontuais no segundo exato.",
+            corDestaque = NeonLilas
+        ) {
+            // Item 1: Tela cheia com gota d'água
+            var usarTelaCheia by remember { mutableStateOf(Configuracoes.usarTelaCheiaLembrete(contexto)) }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Switch(
+                    checked = usarTelaCheia,
+                    onCheckedChange = { ativa ->
+                        usarTelaCheia = ativa
+                        Configuracoes.salvarUsarTelaCheiaLembrete(contexto, ativa)
+                    },
+                    colors = coresInterruptor()
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Tela cheia com animação da gota",
+                        fontWeight = FontWeight.SemiBold,
+                        color = TextoPrimario,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Text(
+                        text = if (usarTelaCheia) "Acorda o visor sobre a tela de bloqueio" else "Apenas notificação padrão",
+                        color = if (usarTelaCheia) VerdeStatus else TextoApoio,
+                        fontSize = 11.sp
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Ao tocar o alarme, abre a tela de prioridade máxima com a animação da gota d'água, resumo contextual e menu de adiamento. Se desativado, exibe apenas a notificação padrão do Android.",
+                color = TextoApoio,
+                style = MaterialTheme.typography.bodySmall,
+                lineHeight = 16.sp
+            )
+
+            Spacer(modifier = Modifier.height(14.dp))
+            HorizontalDivider(color = Color(0xFF1E284A), thickness = 1.dp)
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Item 2: Sincronização opcional com Google Agenda
+            var syncAgenda by remember { mutableStateOf(com.meuagente.app.lembretes.SincronizadorGoogleAgenda.estaAtivo(contexto)) }
+            val launcherCalendario = rememberLauncherForActivityResult(
+                ActivityResultContracts.RequestMultiplePermissions()
+            ) { permissoes ->
+                val concedido = permissoes[android.Manifest.permission.WRITE_CALENDAR] == true
+                syncAgenda = concedido
+                com.meuagente.app.lembretes.SincronizadorGoogleAgenda.salvarAtivo(contexto, concedido)
+            }
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Switch(
+                    checked = syncAgenda,
+                    onCheckedChange = { ativa ->
+                        if (ativa) {
+                            if (com.meuagente.app.lembretes.SincronizadorGoogleAgenda.temPermissao(contexto)) {
+                                syncAgenda = true
+                                com.meuagente.app.lembretes.SincronizadorGoogleAgenda.salvarAtivo(contexto, true)
+                            } else {
+                                launcherCalendario.launch(
+                                    arrayOf(
+                                        android.Manifest.permission.READ_CALENDAR,
+                                        android.Manifest.permission.WRITE_CALENDAR
+                                    )
+                                )
+                            }
+                        } else {
+                            syncAgenda = false
+                            com.meuagente.app.lembretes.SincronizadorGoogleAgenda.salvarAtivo(contexto, false)
+                        }
+                    },
+                    colors = coresInterruptor()
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Sincronizar com o Google Agenda",
+                        fontWeight = FontWeight.SemiBold,
+                        color = TextoPrimario,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Text(
+                        text = if (syncAgenda) "Sincronização ativa (cópia no Google Agenda)" else "Desativado (somente no Blér)",
+                        color = if (syncAgenda) VerdeStatus else TextoApoio,
+                        fontSize = 11.sp
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Cria automaticamente uma cópia de cada lembrete agendado na sua agenda principal do Google no celular, servindo como camada extra de segurança para você nunca esquecer um compromisso.",
+                color = TextoApoio,
+                style = MaterialTheme.typography.bodySmall,
+                lineHeight = 16.sp
+            )
+
+            Spacer(modifier = Modifier.height(14.dp))
+            HorizontalDivider(color = Color(0xFF1E284A), thickness = 1.dp)
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // ── PAINEL DE DIAGNÓSTICO EM TEMPO REAL DAS PERMISSÕES ──
+            Text(
+                text = "Diagnóstico e Permissões do Sistema",
+                fontWeight = FontWeight.Bold,
+                color = NeonAzul,
+                fontSize = 13.sp
+            )
+            Spacer(modifier = Modifier.height(3.dp))
+            Text(
+                text = "O Android exige 3 permissões específicas para tocar alarmes e acordar a tela:",
+                color = TextoApoio,
+                fontSize = 11.sp,
+                lineHeight = 15.sp
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+
+            val lifecycleOwner = LocalLifecycleOwner.current
+            var cicloPermissao by remember { mutableStateOf(0) }
+
+            DisposableEffect(lifecycleOwner) {
+                val observer = LifecycleEventObserver { _, event ->
+                    if (event == Lifecycle.Event.ON_RESUME) {
+                        cicloPermissao++
+                    }
+                }
+                lifecycleOwner.lifecycle.addObserver(observer)
+                onDispose {
+                    lifecycleOwner.lifecycle.removeObserver(observer)
+                }
+            }
+
+            val launcherNotifConfig = rememberLauncherForActivityResult(
+                ActivityResultContracts.RequestPermission()
+            ) { _ ->
+                cicloPermissao++
+            }
+
+            val temNotificacao = remember(cicloPermissao) {
+                com.meuagente.app.lembretes.NotificadorLembrete.temPermissaoNotificacao(contexto)
+            }
+            val temAlarmeExato = remember(cicloPermissao) {
+                com.meuagente.app.lembretes.GerenciadorLembretes.podeAgendarAlarmesExatos(contexto)
+            }
+            val isentoBateria = remember(cicloPermissao) {
+                !com.meuagente.app.lembretes.GerenciadorBateria.precisaPedirIsencao(contexto)
+            }
+
+            // Permissão 1: Notificações
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFF090D1C), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 10.dp, vertical = 8.dp)
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("🔔", fontSize = 14.sp, modifier = Modifier.padding(end = 6.dp))
+                        Text(
+                            text = "Notificações",
+                            fontWeight = FontWeight.SemiBold,
+                            color = TextoPrimario,
+                            fontSize = 13.sp
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = if (temNotificacao) "✓ Ativo" else "✗ Desativado",
+                            color = if (temNotificacao) VerdeStatus else Color(0xFFFF5252),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp
+                        )
+                    }
+                    Text(
+                        text = if (temNotificacao) "Permissão concedida para avisos sonoros" else "Toque ao lado para permitir avisos e alarme",
+                        color = TextoApoio,
+                        fontSize = 10.sp
+                    )
+                }
+                if (!temNotificacao) {
+                    OutlinedButton(
+                        onClick = {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                launcherNotifConfig.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                            } else {
+                                com.meuagente.app.lembretes.NotificadorLembrete.abrirConfiguracaoNotificacoes(contexto)
+                            }
+                        },
+                        border = BorderStroke(1.dp, NeonAzul.copy(alpha = 0.8f)),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = NeonAzul),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                        modifier = Modifier.height(32.dp)
+                    ) {
+                        Text("Autorizar", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            // Permissão 2: Alarmes no Segundo Exato
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFF090D1C), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 10.dp, vertical = 8.dp)
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("⏰", fontSize = 14.sp, modifier = Modifier.padding(end = 6.dp))
+                        Text(
+                            text = "Alarmes no minuto exato",
+                            fontWeight = FontWeight.SemiBold,
+                            color = TextoPrimario,
+                            fontSize = 13.sp
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = if (temAlarmeExato) "✓ Ativo" else "✗ Bloqueado",
+                            color = if (temAlarmeExato) VerdeStatus else Color(0xFFFF5252),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp
+                        )
+                    }
+                    Text(
+                        text = if (temAlarmeExato) "Disparos sem agrupamento ou atraso" else "Android pode atrasar o alarme em 15-60m",
+                        color = TextoApoio,
+                        fontSize = 10.sp
+                    )
+                }
+                if (!temAlarmeExato) {
+                    OutlinedButton(
+                        onClick = {
+                            com.meuagente.app.lembretes.GerenciadorLembretes.abrirConfiguracaoAlarmesExatos(contexto)
+                        },
+                        border = BorderStroke(1.dp, NeonAzul.copy(alpha = 0.8f)),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = NeonAzul),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                        modifier = Modifier.height(32.dp)
+                    ) {
+                        Text("Habilitar", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            // Permissão 3: Otimização de Bateria
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFF090D1C), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 10.dp, vertical = 8.dp)
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("🔋", fontSize = 14.sp, modifier = Modifier.padding(end = 6.dp))
+                        Text(
+                            text = "Isenção de Bateria",
+                            fontWeight = FontWeight.SemiBold,
+                            color = TextoPrimario,
+                            fontSize = 13.sp
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = if (isentoBateria) "✓ Isento" else "⚠ Restrito",
+                            color = if (isentoBateria) VerdeStatus else Color(0xFFFFB74D),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp
+                        )
+                    }
+                    Text(
+                        text = if (isentoBateria) "App não é congelado em modo Doze" else "Celular pode suspender o app em repouso",
+                        color = TextoApoio,
+                        fontSize = 10.sp
+                    )
+                }
+                if (!isentoBateria) {
+                    OutlinedButton(
+                        onClick = {
+                            com.meuagente.app.lembretes.GerenciadorBateria.abrirConfiguracaoBateria(contexto)
+                        },
+                        border = BorderStroke(1.dp, NeonAzul.copy(alpha = 0.8f)),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = NeonAzul),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                        modifier = Modifier.height(32.dp)
+                    ) {
+                        Text("Isentar", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            // Permissão 4: Sobrepor a outros apps (SYSTEM_ALERT_WINDOW)
+            val podeSobrepor = remember(cicloPermissao) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    android.provider.Settings.canDrawOverlays(contexto)
+                } else {
+                    true
+                }
+            }
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFF090D1C), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 10.dp, vertical = 8.dp)
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("🪟", fontSize = 14.sp, modifier = Modifier.padding(end = 6.dp))
+                        Text(
+                            text = "Sobrepor a outros apps",
+                            fontWeight = FontWeight.SemiBold,
+                            color = TextoPrimario,
+                            fontSize = 13.sp
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = if (podeSobrepor) "✓ Ativo" else "✗ Desativado",
+                            color = if (podeSobrepor) VerdeStatus else Color(0xFFFF5252),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp
+                        )
+                    }
+                    Text(
+                        text = if (podeSobrepor) "Aparece na tela mesmo usando outros apps" else "Aparece apenas na barra de notificações",
+                        color = TextoApoio,
+                        fontSize = 10.sp
+                    )
+                }
+                if (!podeSobrepor) {
+                    OutlinedButton(
+                        onClick = {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                                try {
+                                    val intent = Intent(
+                                        android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                        Uri.parse("package:${contexto.packageName}")
+                                    ).apply {
+                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    }
+                                    contexto.startActivity(intent)
+                                } catch (_: Exception) {}
+                            }
+                        },
+                        border = BorderStroke(1.dp, NeonAzul.copy(alpha = 0.8f)),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = NeonAzul),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                        modifier = Modifier.height(32.dp)
+                    ) {
+                        Text("Autorizar", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+            HorizontalDivider(color = Color(0xFF1E284A), thickness = 1.dp)
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // ── SELETOR DE SOM DA ENTREGA COM PRÉ-ESCUTA (PREVIEW) ──
+            var tipoSomAtual by remember { mutableStateOf(Configuracoes.obterTipoSomLembrete(contexto)) }
+            var nomeSomPersonalizado by remember { mutableStateOf(Configuracoes.obterNomeSomLembrete(contexto)) }
+            var tocandoPreview by remember { mutableStateOf(false) }
+            var ringtonePreview by remember { mutableStateOf<android.media.Ringtone?>(null) }
+
+            DisposableEffect(Unit) {
+                onDispose {
+                    ringtonePreview?.stop()
+                }
+            }
+
+            fun alternarPreview() {
+                if (tocandoPreview) {
+                    ringtonePreview?.stop()
+                    ringtonePreview = null
+                    tocandoPreview = false
+                } else {
+                    val uri = Configuracoes.obterUriSomLembrete(contexto)
+                    try {
+                        ringtonePreview = android.media.RingtoneManager.getRingtone(contexto, uri).apply {
+                            play()
+                        }
+                        tocandoPreview = true
+                    } catch (_: Exception) {}
+                }
+            }
+
+            val launcherEscolherSom = rememberLauncherForActivityResult(
+                ActivityResultContracts.StartActivityForResult()
+            ) { result ->
+                if (result.resultCode == android.app.Activity.RESULT_OK) {
+                    val uri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        result.data?.getParcelableExtra(android.media.RingtoneManager.EXTRA_RINGTONE_PICKED_URI, Uri::class.java)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        result.data?.getParcelableExtra(android.media.RingtoneManager.EXTRA_RINGTONE_PICKED_URI)
+                    }
+                    if (uri != null) {
+                        val ringtone = android.media.RingtoneManager.getRingtone(contexto, uri)
+                        val titulo = ringtone?.getTitle(contexto) ?: "Toque Escolhido"
+                        tipoSomAtual = "personalizado"
+                        nomeSomPersonalizado = titulo
+                        Configuracoes.salvarSomLembrete(contexto, "personalizado", uri.toString(), titulo)
+                    }
+                }
+            }
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "Som do Alarme e Notificação",
+                    fontWeight = FontWeight.Bold,
+                    color = NeonAzul,
+                    fontSize = 13.sp,
+                    modifier = Modifier.weight(1f)
+                )
+                OutlinedButton(
+                    onClick = { alternarPreview() },
+                    border = BorderStroke(1.dp, if (tocandoPreview) Color(0xFFFF5252) else NeonAzul.copy(alpha = 0.8f)),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = if (tocandoPreview) Color(0xFFFF5252) else NeonAzul),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                    modifier = Modifier.height(28.dp)
+                ) {
+                    Text(if (tocandoPreview) "⏹ Parar" else "▶ Ouvir", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+            Spacer(modifier = Modifier.height(3.dp))
+            Text(
+                text = "Escolha qual som tocará na tela do alarme e nas notificações:",
+                color = TextoApoio,
+                fontSize = 11.sp
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+
+            val opcoesSons = listOf(
+                "alarme_padrao" to "⏰ Alarme do Relógio",
+                "notificacao" to "🔔 Notificação Suave",
+                "toque_chamada" to "📞 Toque de Chamada",
+                "personalizado" to if (nomeSomPersonalizado.isNotBlank()) "🎵 $nomeSomPersonalizado" else "🎵 Escolher do Celular..."
+            )
+
+            opcoesSons.forEach { (tipo, rotulo) ->
+                val selecionado = tipoSomAtual == tipo
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            if (tocandoPreview) {
+                                ringtonePreview?.stop()
+                                tocandoPreview = false
+                            }
+                            if (tipo == "personalizado") {
+                                val intent = Intent(android.media.RingtoneManager.ACTION_RINGTONE_PICKER).apply {
+                                    putExtra(android.media.RingtoneManager.EXTRA_RINGTONE_TYPE, android.media.RingtoneManager.TYPE_ALL)
+                                    putExtra(android.media.RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
+                                    putExtra(android.media.RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, false)
+                                }
+                                launcherEscolherSom.launch(intent)
+                            } else {
+                                tipoSomAtual = tipo
+                                Configuracoes.salvarSomLembrete(contexto, tipo)
+                            }
+                        }
+                        .padding(vertical = 4.dp)
+                ) {
+                    RadioButton(
+                        selected = selecionado,
+                        onClick = {
+                            if (tocandoPreview) {
+                                ringtonePreview?.stop()
+                                tocandoPreview = false
+                            }
+                            if (tipo == "personalizado") {
+                                val intent = Intent(android.media.RingtoneManager.ACTION_RINGTONE_PICKER).apply {
+                                    putExtra(android.media.RingtoneManager.EXTRA_RINGTONE_TYPE, android.media.RingtoneManager.TYPE_ALL)
+                                    putExtra(android.media.RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
+                                    putExtra(android.media.RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, false)
+                                }
+                                launcherEscolherSom.launch(intent)
+                            } else {
+                                tipoSomAtual = tipo
+                                Configuracoes.salvarSomLembrete(contexto, tipo)
+                            }
+                        },
+                        colors = RadioButtonDefaults.colors(selectedColor = NeonAzul, unselectedColor = TextoApoio)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = rotulo,
+                        color = if (selecionado) Color.White else TextoApoio,
+                        fontWeight = if (selecionado) FontWeight.Bold else FontWeight.Normal,
+                        fontSize = 13.sp
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+            HorizontalDivider(color = Color(0xFF1E284A), thickness = 1.dp)
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // ── BOTÃO DE TESTE RÁPIDO EM 10 SEGUNDOS ──
+            var agendandoTeste by remember { mutableStateOf(false) }
+
+            Button(
+                onClick = {
+                    if (!agendandoTeste) {
+                        agendandoTeste = true
+                        com.meuagente.app.lembretes.GerenciadorLembretes.agendarTeste10Segundos(contexto) { _ ->
+                            agendandoTeste = false
+                            Toast.makeText(
+                                contexto,
+                                "⏰ Alarme de teste agendado para daqui a 10s! Pode trocar de app ou bloquear.",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth().height(46.dp),
+                shape = RoundedCornerShape(10.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF131E3A),
+                    contentColor = NeonAzul
+                ),
+                border = BorderStroke(1.dp, NeonAzul.copy(alpha = 0.7f)),
+                enabled = !agendandoTeste
+            ) {
+                Text(
+                    text = if (agendandoTeste) "⏳ Agendando teste..." else "⚡ Testar Alarme em 10 Segundos",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp
+                )
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Dispara um lembrete teste daqui a 10 segundos. Toque no botão e vá para outro aplicativo (ex: WhatsApp/YouTube) ou bloqueie a tela para ver o Orbe Quântico neon surgir por cima de tudo!",
+                color = TextoApoio,
+                fontSize = 11.sp,
+                lineHeight = 15.sp
+            )
+        }
 
         // ════════════════════════════════════════════════════
         // BOTÃO INFERIOR: VOLTAR PARA O CHAT

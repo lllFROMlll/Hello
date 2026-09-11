@@ -22,7 +22,7 @@ class GravadorAudio(
     private val aoAtualizarIntensidade: (Float) -> Unit,
     private val aoFinalizar: (ByteArray) -> Unit,
     private val aoErro: (String) -> Unit,
-    private val silencioParaPararMs: Long = 1500L
+    private val silencioParaPararMs: Long = 2500L
 ) {
     @Volatile
     private var gravando = false

@@ -50,9 +50,12 @@ interface AgenteDao {
     suspend fun apagarConversa(conversaId: Int)
 
     @Insert
-    suspend fun salvarLembrete(lembrete: LembreteEntity)
+    suspend fun salvarLembrete(lembrete: LembreteEntity): Long
 
-    @Query("SELECT * FROM lembretes WHERE concluido = 0")
+    @Query("SELECT * FROM lembretes WHERE id = :id")
+    suspend fun buscarLembretePorId(id: Int): LembreteEntity?
+
+    @Query("SELECT * FROM lembretes WHERE concluido = 0 AND status = 'PENDENTE'")
     suspend fun listarLembretesPendentes(): List<LembreteEntity>
 
     @Query("SELECT * FROM lembretes ORDER BY dataCriacao DESC")

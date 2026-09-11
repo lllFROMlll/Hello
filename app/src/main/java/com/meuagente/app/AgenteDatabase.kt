@@ -10,7 +10,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [MensagemEntity::class, LembreteEntity::class, ConversaEntity::class],
-    version = 4
+    version = 5
 )
 @TypeConverters(Converters::class)
 abstract class AgenteDatabase : RoomDatabase() {
@@ -45,13 +45,23 @@ abstract class AgenteDatabase : RoomDatabase() {
             }
         }
 
+        // Adiciona campos para o sistema autônomo de lembretes: contexto, status, conversa e Google Agenda
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE lembretes ADD COLUMN contexto TEXT")
+                db.execSQL("ALTER TABLE lembretes ADD COLUMN status TEXT NOT NULL DEFAULT 'PENDENTE'")
+                db.execSQL("ALTER TABLE lembretes ADD COLUMN conversaOrigemId INTEGER")
+                db.execSQL("ALTER TABLE lembretes ADD COLUMN googleEventId INTEGER")
+            }
+        }
+
         fun obter(contexto: Context): AgenteDatabase {
             return instancia ?: synchronized(this) {
                 val nova = Room.databaseBuilder(
                     contexto.applicationContext,
                     AgenteDatabase::class.java,
                     "agente_database"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build()
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build()
                 instancia = nova
                 nova
             }

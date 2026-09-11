@@ -191,4 +191,60 @@ object Configuracoes {
             else -> emptyList()
         }
     }
+
+    // ── Lembretes: tela cheia animada (gota) vs apenas notificação padrão ──
+    private const val CHAVE_TELA_CHEIA_LEMBRETE = "tela_cheia_lembrete"
+
+    fun salvarUsarTelaCheiaLembrete(contexto: Context, ativa: Boolean) {
+        val prefs = contexto.getSharedPreferences(ARQUIVO, Context.MODE_PRIVATE)
+        prefs.edit().putBoolean(CHAVE_TELA_CHEIA_LEMBRETE, ativa).apply()
+    }
+
+    fun usarTelaCheiaLembrete(contexto: Context): Boolean {
+        val prefs = contexto.getSharedPreferences(ARQUIVO, Context.MODE_PRIVATE)
+        return prefs.getBoolean(CHAVE_TELA_CHEIA_LEMBRETE, true)
+    }
+
+    // ── Lembretes: Som da entrega ──
+    private const val CHAVE_TIPO_SOM_LEMBRETE = "tipo_som_lembrete"
+    private const val CHAVE_URI_SOM_LEMBRETE = "uri_som_lembrete"
+    private const val CHAVE_NOME_SOM_LEMBRETE = "nome_som_lembrete"
+
+    fun salvarSomLembrete(contexto: Context, tipo: String, uri: String = "", nomeExibicao: String = "") {
+        val prefs = contexto.getSharedPreferences(ARQUIVO, Context.MODE_PRIVATE)
+        prefs.edit()
+            .putString(CHAVE_TIPO_SOM_LEMBRETE, tipo)
+            .putString(CHAVE_URI_SOM_LEMBRETE, uri)
+            .putString(CHAVE_NOME_SOM_LEMBRETE, nomeExibicao)
+            .apply()
+    }
+
+    fun obterTipoSomLembrete(contexto: Context): String {
+        val prefs = contexto.getSharedPreferences(ARQUIVO, Context.MODE_PRIVATE)
+        return prefs.getString(CHAVE_TIPO_SOM_LEMBRETE, "alarme_padrao") ?: "alarme_padrao"
+    }
+
+    fun obterNomeSomLembrete(contexto: Context): String {
+        val prefs = contexto.getSharedPreferences(ARQUIVO, Context.MODE_PRIVATE)
+        return prefs.getString(CHAVE_NOME_SOM_LEMBRETE, "") ?: ""
+    }
+
+    fun obterUriSomLembrete(contexto: Context): android.net.Uri {
+        val prefs = contexto.getSharedPreferences(ARQUIVO, Context.MODE_PRIVATE)
+        val tipo = prefs.getString(CHAVE_TIPO_SOM_LEMBRETE, "alarme_padrao") ?: "alarme_padrao"
+        val uriStr = prefs.getString(CHAVE_URI_SOM_LEMBRETE, "").orEmpty()
+
+        if (tipo == "personalizado" && uriStr.isNotBlank()) {
+            try {
+                return android.net.Uri.parse(uriStr)
+            } catch (_: Exception) {}
+        }
+
+        return when (tipo) {
+            "notificacao" -> android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_NOTIFICATION)
+            "toque_chamada" -> android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_RINGTONE)
+            else -> android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_ALARM)
+                ?: android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_NOTIFICATION)
+        }
+    }
 }

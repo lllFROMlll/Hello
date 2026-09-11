@@ -3,6 +3,7 @@ package com.meuagente.app
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.os.Build
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -32,6 +33,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -105,6 +107,7 @@ fun AppPrincipal() {
 private val REGEX_GUARDAR = Regex("""\[GUARDAR:\s*(.+?)\]""")
 private val REGEX_APAGAR = Regex("""\[APAGAR:\s*(.+?)\]""")
 private val REGEX_BUSCAR = Regex("""\[BUSCAR:\s*(.+?)\]""")
+private val REGEX_LEMBRETE_AGENDADO = Regex("""\[LEMBRETE_AGENDADO:\s*(\{.+\})\]""")
 
 private fun formatarHora(dataHora: Long): String =
     SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(dataHora))
@@ -139,7 +142,12 @@ private fun montarInstrucaoDeMemoria(lembretes: List<LembreteEntity>): String {
     val listaTexto = if (lembretes.isEmpty()) {
         "(nenhuma memória guardada ainda)"
     } else {
-        lembretes.joinToString("\n") { "- ${it.descricao}" }
+        lembretes.joinToString("\n") { lembrete ->
+            val dataStr = lembrete.dataHoraAgendada?.let {
+                " [agendado para ${SimpleDateFormat("dd/MM/yyyy 'às' HH:mm", Locale.getDefault()).format(Date(it))}]"
+            }.orEmpty()
+            "- ${lembrete.descricao}$dataStr"
+        }
     }
 
     val agora = java.time.LocalDateTime.now()
@@ -147,36 +155,114 @@ private fun montarInstrucaoDeMemoria(lembretes: List<LembreteEntity>): String {
         java.time.format.DateTimeFormatter.ofPattern("EEEE, dd 'de' MMMM 'de' yyyy", Locale.getDefault())
     )
     val horaReal = agora.format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))
+    val isoAgora = agora.format(java.time.format.DateTimeFormatter.ISO_LOCAL_DATE_TIME)
 
     return """
-        Você é Blér, um assistente pessoal com memória real, não apenas um chatbot comum.
+        Você é Blér, um assistente pessoal com memória real e sistema de lembretes com alarme, não apenas um chatbot comum.
 
         DATA REAL DE HOJE: $dataReal
         HORA REAL AGORA: $horaReal (horário local do celular do usuário)
-        IMPORTANTE: esses valores de data e hora são REAIS e confiáveis, lidos do relógio do aparelho no momento desta mensagem. Confie neles para qualquer cálculo de prazo, agendamento, lembrete ou resposta sobre "hoje", "agora", "amanhã" etc. NUNCA suponha, estime ou invente data e hora por conta própria.
+        TIMESTAMP ATUAL: $isoAgora
+        IMPORTANTE: esses valores de data e hora são REAIS e confiáveis, lidos do relógio do aparelho no momento desta mensagem. Confie neles para qualquer cálculo de prazo, agendamento, lembrete ou resposta sobre "hoje", "agora", "amanhã", "semana que vem" etc. NUNCA suponha, estime ou invente data e hora por conta própria.
 
-        Memórias guardadas até agora:
+        Memórias e lembretes guardados até agora:
         $listaTexto
 
         Regras OBRIGATÓRIAS:
-        1. Se o usuário pedir para lembrar de algo, adicione no FINAL da resposta, em linha separada, exatamente: [GUARDAR: descrição bem curta e resumida]
-        2. Se o usuário disser que algo já foi feito, resolvido, entregue, comprado, cancelado, ou que não precisa mais lembrar daquilo, você DEVE adicionar no FINAL da resposta, em linha separada: [APAGAR: texto que identifique a memória antiga]. Isso é obrigatório sempre que o usuário confirmar que algo foi concluído.
-        3. Quando o usuário perguntar o que está pendente, responda de forma BREVE e resumida, sem repetir detalhes extras de tempo que possam não fazer mais sentido depois.
-        4. Nunca escreva as marcações [GUARDAR: ] ou [APAGAR: ] de forma diferente da exata, nem explique elas ao usuário.
-        5. Se a pergunta depender de informação atual ou da internet (notícias, esportes, clima, preços, cotações, fatos recentes), adicione no FINAL da resposta, em linha separada, exatamente: [BUSCAR: termos de busca curtos e eficazes]. Você receberá os resultados reais da internet e deverá responder com base neles, citando de onde veio a informação quando fizer sentido. Se a mensagem que você recebe já contém "RESULTADOS DA BUSCA NA INTERNET", responda normalmente SEM pedir nova busca.
-        6. Responda APENAS à ÚLTIMA mensagem do usuário, de forma direta, em um único parágrafo coerente. NUNCA repita a mesma frase ou trecho dentro da resposta.
-        7. Para fatos atuais (jogos, placares, notícias, datas de eventos recentes), use SOMENTE os "RESULTADOS DA BUSCA NA INTERNET" que você receber. Se os resultados não trouxerem a informação clara, diga honestamente que não encontrou — NUNCA invente placar, data, nome ou evento.
+        1. Se o usuário pedir para ser LEMBRADO ou AVISADO de algo com data, hora ou prazo (ex.: "me lembra de tomar remédio amanhã às 8h", "me avisa daqui a 20 minutos", "lembrete sexta de manhã de pagar a conta"):
+           Você DEVE adicionar no FINAL da sua resposta, em linha separada, exatamente a tag estruturada:
+           [LEMBRETE_AGENDADO: {"titulo": "Título curto e claro", "dataHora": "YYYY-MM-DDTHH:mm:ss", "contexto": "motivo ou resumo de apoio da conversa se houver"}]
+           - Calcule a dataHora exata com base na DATA REAL e HORA REAL informadas acima.
+           - "de manhã" = 09:00:00, "ao meio-dia" = 12:00:00, "à tarde" = 14:00:00, "à noite" = 20:00:00. Se disser um dia futuro sem especificar hora, use 09:00:00.
+           - Se for prazo relativo (ex: "daqui a 15 minutos"), calcule a soma exata com o horário de agora.
+           - No campo "contexto", inclua uma frase com qualquer detalhe relevante mencionado nas conversas recentes para apoiar o usuário quando o alarme tocar (ou deixe em branco se não houver).
+        2. Se for uma anotação geral ou fato pessoal SEM data/hora específica (ex.: "lembra que minha cor favorita é azul"), adicione no FINAL da resposta: [GUARDAR: descrição bem curta e resumida]
+        3. Se o usuário disser que algo já foi feito, resolvido, entregue, cancelado, ou que não precisa mais lembrar daquilo, adicione no FINAL: [APAGAR: texto que identifique a memória antiga]
+        4. Quando o usuário perguntar o que está pendente, responda de forma BREVE e resumida.
+        5. Se a pergunta depender de informação atual ou da internet (notícias, clima, cotações), adicione no FINAL: [BUSCAR: termos de busca curtos e eficazes]
+        6. Responda APENAS à ÚLTIMA mensagem do usuário de forma natural, calorosa e direta.
     """.trimIndent()
 }
 
-private suspend fun processarAcoesDeMemoria(respostaIA: String, db: AgenteDatabase): String {
+private suspend fun processarAcoesDeMemoria(
+    respostaIA: String,
+    db: AgenteDatabase,
+    contexto: android.content.Context,
+    idConversa: Int,
+    aoPrecisarBateria: () -> Unit,
+    aoPrecisarAlarmeExato: () -> Unit = {},
+    aoPrecisarNotificacao: () -> Unit = {}
+): String {
     val linhasParaMostrar = mutableListOf<String>()
 
     for (linha in respostaIA.lines()) {
+        val agendadoMatch = REGEX_LEMBRETE_AGENDADO.find(linha)
         val guardarMatch = REGEX_GUARDAR.find(linha)
         val apagarMatch = REGEX_APAGAR.find(linha)
 
         when {
+            agendadoMatch != null -> {
+                val jsonStr = agendadoMatch.groupValues[1].trim()
+                try {
+                    val json = org.json.JSONObject(jsonStr)
+                    val titulo = json.optString("titulo", "Lembrete").trim()
+                    val dataHoraStr = json.optString("dataHora", "").trim()
+                    val contextoTexto = json.optString("contexto", "").takeIf { it.isNotBlank() }
+
+                    val millis = try {
+                        val ldt = java.time.LocalDateTime.parse(dataHoraStr)
+                        ldt.atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
+                    } catch (_: Exception) {
+                        System.currentTimeMillis() + 60 * 60 * 1000L
+                    }
+
+                    if (millis > System.currentTimeMillis()) {
+                        val lembrete = LembreteEntity(
+                            descricao = titulo,
+                            pessoa = null,
+                            dataCriacao = System.currentTimeMillis(),
+                            concluido = false,
+                            dataHoraAgendada = millis,
+                            repeticao = Repeticao.NENHUMA,
+                            contexto = contextoTexto,
+                            status = "PENDENTE",
+                            conversaOrigemId = idConversa
+                        )
+                        val idCriado = db.agenteDao().salvarLembrete(lembrete).toInt()
+                        val lembreteComId = lembrete.copy(id = idCriado)
+                        com.meuagente.app.lembretes.GerenciadorLembretes.agendar(contexto, lembreteComId)
+
+                        // Sincronização opcional com Google Agenda
+                        if (com.meuagente.app.lembretes.SincronizadorGoogleAgenda.estaAtivo(contexto)) {
+                            val eventoId = com.meuagente.app.lembretes.SincronizadorGoogleAgenda.sincronizarLembrete(
+                                contexto = contexto,
+                                titulo = titulo,
+                                descricaoContexto = contextoTexto,
+                                dataHoraMillis = millis
+                            )
+                            if (eventoId != null) {
+                                db.agenteDao().atualizarLembrete(lembreteComId.copy(googleEventId = eventoId))
+                            }
+                        }
+
+                        // Verifica permissão de notificação (Android 13+)
+                        if (!com.meuagente.app.lembretes.NotificadorLembrete.temPermissaoNotificacao(contexto)) {
+                            aoPrecisarNotificacao()
+                        }
+
+                        // Verifica permissão de alarme exato (Android 12+)
+                        if (!com.meuagente.app.lembretes.GerenciadorLembretes.podeAgendarAlarmesExatos(contexto)) {
+                            aoPrecisarAlarmeExato()
+                        }
+
+                        // Solicitação de isenção de bateria no momento do primeiro lembrete
+                        if (com.meuagente.app.lembretes.GerenciadorBateria.precisaPedirIsencao(contexto)) {
+                            aoPrecisarBateria()
+                        }
+                    }
+                } catch (_: Exception) {
+                }
+            }
             guardarMatch != null -> {
                 val descricao = guardarMatch.groupValues[1].trim()
                 db.agenteDao().salvarLembrete(
@@ -189,6 +275,7 @@ private suspend fun processarAcoesDeMemoria(respostaIA: String, db: AgenteDataba
                     .firstOrNull { it.descricao.contains(descricaoBusca, ignoreCase = true) || descricaoBusca.contains(it.descricao, ignoreCase = true) }
                 if (encontrado != null) {
                     db.agenteDao().apagarLembrete(encontrado.id)
+                    com.meuagente.app.lembretes.GerenciadorLembretes.cancelar(contexto, encontrado.id)
                 }
             }
             else -> linhasParaMostrar.add(linha)
@@ -213,6 +300,13 @@ fun TelaDeChat(aoAbrirConfig: () -> Unit) {
 
     // Origem (provedor · modelo) de cada resposta da IA, por id de mensagem
     val origensIA = remember { mutableStateMapOf<Int, String>() }
+    var mostrarDialogoBateria by remember { mutableStateOf(false) }
+    var mostrarDialogoAlarmeExato by remember { mutableStateOf(false) }
+
+    // Launcher para autorização nativa de notificações (Android 13+)
+    val pedirPermissaoNotificacao = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { _ -> }
 
     // ── Estado do comando de voz imersivo ──
     var estadoVoz by remember { mutableStateOf(EstadoVoz.INATIVO) }
@@ -382,8 +476,24 @@ fun TelaDeChat(aoAbrirConfig: () -> Unit) {
                 val historico = db.agenteDao().listarMensagensDaConversa(idConversa)
 
                 try {
+                    val processarResposta: suspend (String) -> String = { textoResposta ->
+                        processarAcoesDeMemoria(
+                            respostaIA = textoResposta,
+                            db = db,
+                            contexto = contexto,
+                            idConversa = idConversa,
+                            aoPrecisarBateria = { mostrarDialogoBateria = true },
+                            aoPrecisarAlarmeExato = { mostrarDialogoAlarmeExato = true },
+                            aoPrecisarNotificacao = {
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                    pedirPermissaoNotificacao.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                }
+                            }
+                        )
+                    }
+
                     var cascata = CascataIA.perguntar(contexto, historico, instrucao)
-                    var respostaLimpa = processarAcoesDeMemoria(cascata.texto, db)
+                    var respostaLimpa = processarResposta(cascata.texto)
 
                     // Proteção contra loop de repetição do modelo (degeneração):
                     // repete a cascata uma vez, pulando o modelo que degenerou.
@@ -392,7 +502,7 @@ fun TelaDeChat(aoAbrirConfig: () -> Unit) {
                             contexto, historico, instrucao,
                             excluirModelo = "${cascata.provedor}:${cascata.modelo}"
                         )
-                        val limpaSegunda = processarAcoesDeMemoria(segundaTentativa.texto, db)
+                        val limpaSegunda = processarResposta(segundaTentativa.texto)
                         if (!respostaDegenerada(limpaSegunda)) {
                             cascata = segundaTentativa
                             respostaLimpa = limpaSegunda
@@ -431,7 +541,7 @@ fun TelaDeChat(aoAbrirConfig: () -> Unit) {
                             val respostaFinal = CascataIA.perguntar(
                                 contexto, historico + mensagemSistema, instrucao
                             )
-                            respostaLimpa = processarAcoesDeMemoria(respostaFinal.texto, db)
+                            respostaLimpa = processarResposta(respostaFinal.texto)
                             cascata = respostaFinal
                         } else {
                             respostaLimpa = respostaLimpa.replace(REGEX_BUSCAR, "").trim() +
@@ -624,6 +734,17 @@ fun TelaDeChat(aoAbrirConfig: () -> Unit) {
         mensagens = emptyList()
         Configuracoes.salvarUltimaConversa(contexto, idFinal)
         carregarConversas()
+
+        // Garante que o canal de notificação de alta prioridade exista e restaura alarmes
+        com.meuagente.app.lembretes.NotificadorLembrete.criarCanalSeNecessario(contexto)
+        com.meuagente.app.lembretes.GerenciadorLembretes.reagendarTodosPendentes(contexto)
+
+        // Solicita permissão de notificação logo na abertura se necessário (Android 13+)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (!com.meuagente.app.lembretes.NotificadorLembrete.temPermissaoNotificacao(contexto)) {
+                pedirPermissaoNotificacao.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
     }
 
     // ── Rolagem automática para a última mensagem ──
@@ -831,6 +952,108 @@ fun TelaDeChat(aoAbrirConfig: () -> Unit) {
                 dismissButton = {
                     TextButton(onClick = { confirmarExclusaoId = null }) {
                         Text("Cancelar")
+                    }
+                }
+            )
+        }
+
+        // ── Diálogo amigável de isenção de bateria (solicitado no 1º lembrete) ──
+        if (mostrarDialogoBateria) {
+            AlertDialog(
+                onDismissRequest = {
+                    com.meuagente.app.lembretes.GerenciadorBateria.marcarComoSolicitado(contexto)
+                    mostrarDialogoBateria = false
+                },
+                containerColor = Color(0xFF0F1428),
+                shape = RoundedCornerShape(16.dp),
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("⏰", fontSize = 22.sp, modifier = Modifier.padding(end = 8.dp))
+                        Text(
+                            text = "Lembretes pontuais",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp
+                        )
+                    }
+                },
+                text = {
+                    Text(
+                        text = "Para que o Blér toque seus alarmes e lembretes no horário exato mesmo com o aparelho bloqueado ou em repouso por horas, o Android precisa de autorização para não suspender o app em segundo plano.",
+                        color = Color(0xFFCBD5E1),
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp
+                    )
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            mostrarDialogoBateria = false
+                            com.meuagente.app.lembretes.GerenciadorBateria.abrirConfiguracaoBateria(contexto)
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF00E5FF),
+                            contentColor = Color(0xFF04060B)
+                        )
+                    ) {
+                        Text("Permitir", fontWeight = FontWeight.Bold)
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = {
+                            com.meuagente.app.lembretes.GerenciadorBateria.marcarComoSolicitado(contexto)
+                            mostrarDialogoBateria = false
+                        }
+                    ) {
+                        Text("Agora não", color = Color(0xFF94A3B8))
+                    }
+                }
+            )
+        }
+
+        // ── Diálogo amigável de permissão de alarme exato (Android 12+) ──
+        if (mostrarDialogoAlarmeExato) {
+            AlertDialog(
+                onDismissRequest = { mostrarDialogoAlarmeExato = false },
+                containerColor = Color(0xFF0F1428),
+                shape = RoundedCornerShape(16.dp),
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("⏰", fontSize = 22.sp, modifier = Modifier.padding(end = 8.dp))
+                        Text(
+                            text = "Alarmes no minuto exato",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp
+                        )
+                    }
+                },
+                text = {
+                    Text(
+                        text = "Para que o Blér toque seus alarmes no minuto exato sem atraso do sistema operacional, autorize a opção 'Permitir definir alarmes e lembretes' na tela que vai se abrir a seguir.",
+                        color = Color(0xFFCBD5E1),
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp
+                    )
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            mostrarDialogoAlarmeExato = false
+                            com.meuagente.app.lembretes.GerenciadorLembretes.abrirConfiguracaoAlarmesExatos(contexto)
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF00E5FF),
+                            contentColor = Color(0xFF04060B)
+                        )
+                    ) {
+                        Text("Abrir Configuração", fontWeight = FontWeight.Bold)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { mostrarDialogoAlarmeExato = false }) {
+                        Text("Depois", color = Color(0xFF94A3B8))
                     }
                 }
             )
